@@ -15,7 +15,6 @@ A self-hosted Azure cost intelligence tool that connects directly to your subscr
 - Estimates **monthly savings** per resource with actionable right-sizing steps
 - Surfaces **Azure Advisor recommendations** alongside your own scoring
 - Tabs for **App Services**, **Storage**, **Reservations**, and **AI Costs** (Cognitive Services / Azure OpenAI)
-- **AI narrative** — optional GPT-powered plain-English summary of your subscription health
 - **Export to PDF** for stakeholder reporting
 - Runs entirely **on your own machine** — read-only service principal, no write permissions ever
 
@@ -117,18 +116,6 @@ Credentials are saved locally to `backend/config/.env` on your machine and never
 
 ---
 
-## Optional: AI narrative
-
-The tool can generate a plain-English summary of your subscription health using Azure OpenAI or Claude.
-
-In the setup wizard, expand **AI Settings** and enter:
-- **Azure OpenAI** — endpoint URL, API key, deployment name (e.g. `gpt-4o-mini`)
-- **Claude** — Anthropic API key
-
-Leave blank to skip — all other features work without AI.
-
----
-
 ## Manual configuration (alternative to wizard)
 
 Copy the example file and fill in your values:
@@ -224,7 +211,7 @@ Configure credentials via the setup wizard on first launch, or mount a pre-fille
 
 - The service principal requires **read-only roles only** — no write access, no ability to modify or delete Azure resources
 - Credentials are stored locally in `backend/config/.env` (gitignored)
-- No data is sent to any external service except Azure APIs and your chosen AI provider
+- No data is sent to any external service except Azure APIs
 - All API calls go directly from your machine to Azure — no intermediary servers
 
 ---
