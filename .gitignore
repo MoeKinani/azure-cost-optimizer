@@ -1,0 +1,36 @@
+# Credentials & settings (saved via the UI — never commit these)
+config/
+backend/.env
+backend/.env.local
+backend/.env.*.local
+
+# Python
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Logs
+*.log
+logs/
+
+# Screenshots and internal session images
+image*.png
+Screenshot*.png
+*screenshot*.png
+
+# Internal development notes (backlog, session history)
+IMPROVEMENTS.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/

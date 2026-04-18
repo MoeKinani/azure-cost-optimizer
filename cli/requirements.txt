@@ -1,0 +1,8 @@
+azure-identity>=1.16.0
+azure-mgmt-resource>=23.0.0
+azure-mgmt-subscription>=3.0.0
+azure-mgmt-compute>=30.0.0
+azure-mgmt-network>=25.0.0
+azure-mgmt-advisor>=9.0.0
+reportlab>=4.2.0
+python-dotenv>=1.0.0
