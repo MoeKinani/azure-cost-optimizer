@@ -156,8 +156,8 @@ Each resource receives a **0–100 optimization score** from real Azure Monitor 
 |-------|-------|---------|
 | 76–100 | **Fully Used** | Well utilised — no action needed |
 | 51–75 | **Actively Used** | In use — consider reserved pricing |
-| 26–50 | **Rarely Used** | Low activity — review and right-size |
-| 0–25 | **Not Used** | Near-zero activity — candidate for deletion |
+| 26–50 | **Likely Waste** | Low activity — review and right-size |
+| 0–25 | **Confirmed Waste** | Near-zero activity — candidate for deletion |
 | — | **Unknown** | No metrics available (diagnostics not enabled) |
 
 Resources with locks, backups, private endpoints, or active reservations are flagged as **protected** and excluded from waste recommendations regardless of score.
