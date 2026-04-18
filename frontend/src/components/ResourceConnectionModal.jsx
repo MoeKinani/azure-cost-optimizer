@@ -1,7 +1,23 @@
 import React, { useMemo, useState } from 'react'
-import clsx from 'clsx'
 import { X, ExternalLink, AlertTriangle } from 'lucide-react'
 import { SCORE_HEX as SCORE_COLOR } from '../scoreColors'
+
+const TYPE_ICON = {
+  'virtualmachines': 'VM', 'storageaccounts': 'St', 'sites': 'App',
+  'serverfarms': 'Plan', 'virtualnetworks': 'VNet', 'networksecuritygroups': 'NSG',
+  'publicipaddresses': 'IP', 'managedclusters': 'AKS', 'vaults': 'KV',
+  'accounts': 'AI', 'workspaces': 'WS', 'namespaces': 'SB',
+  'servers': 'SQL', 'flexibleservers': 'PG', 'disks': 'Disk',
+  'networkinterfaces': 'NIC', 'loadbalancers': 'LB', 'containerregistries': 'ACR',
+  'dnszones': 'DNS', 'privatednszones': 'DNS',
+}
+function getTypeIcon(resourceType) {
+  const lower = resourceType.toLowerCase()
+  for (const [key, icon] of Object.entries(TYPE_ICON)) {
+    if (lower.includes(key)) return icon
+  }
+  return lower.split('/').pop().slice(0, 3).replace(/^\w/, c => c.toUpperCase())
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -91,24 +107,49 @@ const HUB_R = 36
 const SPOKE_R = 22
 const ORBIT = 175
 
-function NodeCircle({ x, y, r, color, label, subLabel, isOrphan, onClick, isHub }) {
+function NodeCircle({ x, y, r, color, label, resourceType, isOrphan, onClick, isHub }) {
   const [hov, setHov] = useState(false)
+  const icon = getTypeIcon(resourceType || '')
+  const iconSize = icon.length <= 2 ? (isHub ? 13 : 10) : icon.length <= 3 ? (isHub ? 11 : 9) : (isHub ? 9 : 8)
+  const labelPad = 6
+  const labelW   = Math.min(label.length * 6.5 + 16, 160)
+
   return (
     <g transform={`translate(${x},${y})`} onClick={onClick}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       className={onClick ? 'cursor-pointer' : ''}>
-      {hov && <circle r={r + 6} fill="none" stroke={color} strokeWidth={1.5} opacity={0.35} />}
-      <circle r={r} fill={color} fillOpacity={isHub ? 0.85 : 0.6} stroke={color} strokeWidth={isHub ? 2 : 1} strokeOpacity={0.9} />
-      {isOrphan && <circle r={5} cx={r - 3} cy={-(r - 3)} fill="#f97316" />}
-      <text y={r + 14} textAnchor="middle" fontSize={isHub ? 11 : 10} fill="#e5e7eb"
-        fontFamily="ui-sans-serif, sans-serif" style={{ pointerEvents: 'none' }}>
-        {label.length > 16 ? label.slice(0, 15) + '…' : label}
+
+      {/* Glow ring */}
+      {(hov || isHub) && (
+        <circle r={r + 6} fill="none" stroke={color} strokeWidth={isHub ? 2 : 1.5} opacity={isHub ? 0.3 : 0.35} />
+      )}
+
+      {/* Main circle */}
+      <circle r={r} fill={color} fillOpacity={isHub ? 0.88 : 0.65}
+        stroke={color} strokeWidth={isHub ? 2 : 1} strokeOpacity={0.9} />
+
+      {/* Type icon */}
+      <text textAnchor="middle" dominantBaseline="central"
+        fontSize={iconSize} fontWeight="700" fill="#0f172a"
+        fontFamily="ui-sans-serif, system-ui, sans-serif"
+        style={{ pointerEvents: 'none', userSelect: 'none' }} opacity={0.85}>
+        {icon}
       </text>
-      {subLabel && (
-        <text y={r + 26} textAnchor="middle" fontSize={9} fill="#6b7280"
-          fontFamily="ui-monospace, monospace" style={{ pointerEvents: 'none' }}>
-          {subLabel}
-        </text>
+
+      {/* Orphan dot */}
+      {isOrphan && <circle r={4.5} cx={r - 3} cy={-(r - 3)} fill="#f97316" stroke="#0f172a" strokeWidth={1} />}
+
+      {/* Full name label — only on hover, with pill background */}
+      {hov && (
+        <g transform={`translate(0,${r + labelPad + 10})`} style={{ pointerEvents: 'none' }}>
+          <rect x={-labelW / 2} y={-10} width={labelW} height={20}
+            rx={10} fill="#1e293b" stroke={color} strokeWidth={1} strokeOpacity={0.6} />
+          <text textAnchor="middle" dominantBaseline="central"
+            fontSize={10} fontWeight="500" fill="#f1f5f9"
+            fontFamily="ui-sans-serif, sans-serif">
+            {label}
+          </text>
+        </g>
       )}
     </g>
   )
@@ -201,7 +242,7 @@ export default function ResourceConnectionModal({ resource, allResources, onClos
                   x={CX} y={CY} r={HUB_R}
                   color={hubColor}
                   label={resource.resource_name}
-                  subLabel={resource.resource_type.split('/').pop()}
+                  resourceType={resource.resource_type}
                   isOrphan={resource.is_orphan}
                   isHub
                 />
@@ -213,7 +254,7 @@ export default function ResourceConnectionModal({ resource, allResources, onClos
                     x={sn.x} y={sn.y} r={SPOKE_R}
                     color={SCORE_COLOR[sn.resource.score_label] ?? '#6b7280'}
                     label={sn.resource.resource_name}
-                    subLabel={sn.resource.resource_type.split('/').pop()}
+                    resourceType={sn.resource.resource_type}
                     isOrphan={sn.resource.is_orphan}
                     onClick={() => setSelected(sn.resource === selected ? null : sn.resource)}
                   />

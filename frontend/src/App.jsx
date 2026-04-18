@@ -61,15 +61,6 @@ function ErrorView({ message, onRetry }) {
   )
 }
 
-function LastRefreshed({ ts }) {
-  if (!ts) return null
-  const dt = new Date(ts)
-  return (
-    <span className="text-xs text-gray-400">
-      Refreshed {dt.toLocaleTimeString()}
-    </span>
-  )
-}
 
 const PROVIDER_LABEL = {
   azure_openai: 'Azure OpenAI',
@@ -84,15 +75,15 @@ function AIStatusBadge({ provider, onOpenSettings }) {
       onClick={onOpenSettings}
       title={active ? `AI scoring active — ${providerLabel(provider)}` : 'Enable AI for better scoring'}
       className={clsx(
-        'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-colors',
+        'flex items-center gap-1.5 px-2 py-1 rounded-full border text-xs font-medium transition-colors',
         active
           ? 'bg-green-900/30 border-green-700/50 text-green-400 hover:bg-green-900/50'
-          : 'bg-red-900/30 border-red-700/50 text-red-400 hover:bg-red-900/50',
+          : 'bg-gray-800 border-gray-700 text-gray-500 hover:text-gray-300',
       )}
     >
-      <span className={clsx('w-1.5 h-1.5 rounded-full', active ? 'bg-green-400 animate-pulse' : 'bg-red-500')} />
+      <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', active ? 'bg-green-400 animate-pulse' : 'bg-gray-600')} />
       <Brain size={11} />
-      {active ? providerLabel(provider) : 'AI Off'}
+      <span className="hidden lg:inline">{active ? providerLabel(provider) : 'AI Off'}</span>
     </button>
   )
 }
@@ -174,11 +165,11 @@ function PartialMonthBanner({ kpi }) {
 function ReadOnlyBadge() {
   return (
     <div
-      title="This tool is read-only. No changes are made to your Azure environment and no data leaves your tenant."
-      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-green-800/40 bg-green-900/20 text-xs text-green-400 cursor-default select-none"
+      title="Read-only — no changes are made to your Azure environment"
+      className="flex items-center gap-1.5 px-2 py-1 rounded-full border border-green-800/40 bg-green-900/20 text-xs text-green-400 cursor-default select-none"
     >
       <Lock size={10} />
-      Read-only
+      <span className="hidden lg:inline">Read-only</span>
     </div>
   )
 }
@@ -189,11 +180,10 @@ function BuyMeCoffeeButton() {
       href="https://buymeacoffee.com/moekinani"
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-700/40 bg-amber-900/20 text-amber-400 hover:bg-amber-900/40 hover:text-amber-300 transition-colors text-xs font-medium"
+      className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-800 hover:bg-amber-900/40 text-gray-400 hover:text-amber-400 transition-colors"
       title="Enjoying the tool? Buy me a coffee!"
     >
-      <Coffee size={12} />
-      <span>Buy me a coffee</span>
+      <Coffee size={14} />
     </a>
   )
 }
@@ -500,13 +490,6 @@ function AppInner() {
         onResourceGroupChange={handleResourceGroupChange}
       />
 
-      {/* Preview banner */}
-      <div className="bg-blue-950/60 border-b border-blue-800/40 px-6 py-1.5 text-center">
-        <p className="text-xs text-blue-300">
-          <span className="font-semibold">Preview</span> — This is an early release. Features and data accuracy are actively being improved.
-        </p>
-      </div>
-
       {/* Header */}
       <header className="sticky top-0 z-10 bg-gray-950/90 backdrop-blur-sm border-b border-gray-800/60 px-6 py-3">
         <div className="max-w-screen-2xl mx-auto flex items-center justify-between gap-4">
@@ -524,6 +507,7 @@ function AppInner() {
               { key: 'storage',       label: 'Storage'        },
               { key: 'reservations',  label: 'Reservations'   },
               { key: 'ai',            label: 'AI Costs'       },
+              { key: 'map',           label: 'Resource Map'   },
             ].map(tab => (
               <button
                 key={tab.key}
@@ -539,16 +523,15 @@ function AppInner() {
               </button>
             ))}
           </nav>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {error && (
               <span className="text-xs text-orange-400 bg-orange-900/20 px-2 py-1 rounded-md">
-                ⚠ Using cached data
+                ⚠ Cached
               </span>
             )}
-            <LastRefreshed ts={data?.last_refreshed} />
-            <ExportPDFButton data={data} />
             <ReadOnlyBadge />
             <AIStatusBadge provider={aiProvider} onOpenSettings={() => setSettingsOpen(true)} />
+            <ExportPDFButton data={data} />
             <BuyMeCoffeeButton />
             <button
               onClick={() => setSettingsOpen(true)}
@@ -557,17 +540,22 @@ function AppInner() {
             >
               <Settings size={14} />
             </button>
+            {data?.last_refreshed && !refreshing && (
+              <span className="text-xs text-gray-500 hidden sm:block">
+                {new Date(data.last_refreshed).toLocaleTimeString()}
+              </span>
+            )}
             <button
               onClick={() => load(true)}
               disabled={refreshing}
               className={clsx(
-                'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
                 'bg-blue-600 hover:bg-blue-500 text-white',
                 refreshing && 'opacity-60 cursor-not-allowed',
               )}
             >
-              <RefreshCw size={14} className={clsx('text-white', refreshing && 'animate-spin')} />
-              <span className="text-white">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
+              <RefreshCw size={12} className={clsx(refreshing && 'animate-spin')} />
+              {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
         </div>
