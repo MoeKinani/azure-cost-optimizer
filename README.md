@@ -143,8 +143,8 @@ AZURE_SUBSCRIPTION_ID=your-subscription-id
 | **Dashboard** | KPI cards, score distribution, cost trends, resource table, orphans, savings |
 | **App Services** | Plans, web apps, function apps — right-size and idle detection |
 | **Storage** | Storage accounts — access patterns, lifecycle policies, last-access tracking |
-| **Reservations** | Reserved Instance coverage and recommendations |
-| **AI Costs** | Cognitive Services / Azure OpenAI — token usage, call rates, deployment listing |
+| **Reservations** | Reserved Instance coverage, utilisation rates, and right-sizing recommendations — shows which reservations are underused and where on-demand spend could be converted to reserved pricing for savings |
+| **AI Costs** | Cognitive Services and Azure OpenAI / AI Foundry — input tokens, output tokens, total tokens, model request counts, per-deployment breakdown, and 30-day usage trends pulled live from Azure Monitor |
 
 ---
 
