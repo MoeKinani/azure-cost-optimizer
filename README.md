@@ -22,7 +22,7 @@ You need four free tools installed before you start. Download and install each o
 
 | Tool | Download link | Notes |
 |------|--------------|-------|
-| **Python 3.11+** | [python.org/downloads](https://www.python.org/downloads/) | On the installer, tick **"Add Python to PATH"** before clicking Install |
+| **Python 3.11 or 3.12** | [python.org/downloads](https://www.python.org/downloads/) | Download **3.12.x** (not 3.13 or 3.14). On the installer, tick **"Add Python to PATH"** before clicking Install |
 | **Node.js 18+** | [nodejs.org](https://nodejs.org) | Download the LTS version |
 | **Git** | [git-scm.com](https://git-scm.com) | Accept all defaults during install |
 | **Azure CLI** | [aka.ms/installazurecliwindows](https://aka.ms/installazurecliwindows) | Used to create the Azure service principal |
@@ -187,6 +187,10 @@ Make sure Monitoring Reader is assigned. Azure AI Foundry metrics use InputToken
 **403 errors on first scan**
 
 Role propagation takes 2-5 minutes after creation. Wait a few minutes and click Refresh.
+
+**install.bat fails with "Building wheel for pydantic-core" or "linker link.exe not found"**
+
+Python 3.13 or 3.14 is installed and has no pre-built packages for some dependencies. Install Python 3.12.x from python.org and re-run `install.bat`. The script will automatically detect and use 3.12 even if a newer version is also installed.
 
 ---
 
