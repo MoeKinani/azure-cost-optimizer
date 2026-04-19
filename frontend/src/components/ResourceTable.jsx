@@ -462,7 +462,7 @@ const ALL_COLS = [
   { key: 'daily_costs',               label: '30-Day Trend',      sortable: false, alwaysVisible: false, defaultVisible: true  },
   { key: 'estimated_monthly_savings', label: 'Est. Savings',      sortable: true,  alwaysVisible: false, defaultVisible: true  },
   { key: 'connections',               label: 'Map',               sortable: false, alwaysVisible: false, defaultVisible: true  },
-  { key: 'ai_action',                 label: 'AI / Advisor',      sortable: false, alwaysVisible: false, defaultVisible: true  },
+  { key: 'ai_action',                 label: 'Advisor',           sortable: false, alwaysVisible: false, defaultVisible: true  },
   // Optional extras (hidden by default)
   { key: 'sku',                       label: 'SKU / Tier',        sortable: true,  alwaysVisible: false, defaultVisible: false },
   { key: 'subscription_id',           label: 'Subscription',      sortable: true,  alwaysVisible: false, defaultVisible: false },

@@ -361,7 +361,7 @@ export default function SettingsPanel({ open, onClose, onSaved, subscriptions = 
                   </p>
                   <Field label="Endpoint" value={form.azure_openai_endpoint} onChange={set('azure_openai_endpoint')}
                     placeholder="https://your-resource.openai.azure.com/"
-                    hint="Base URL only — e.g. https://claudecodeai-pro.openai.azure.com/ — do not include /openai/v1" />
+                    hint="Base URL only — e.g. https://my-resource.openai.azure.com/ — do not include /openai/v1" />
                   <Field label="API Key" value={form.azure_openai_key} onChange={set('azure_openai_key')}
                     placeholder={form._has_aoai_key ? '(already set — leave blank to keep)' : 'Paste key'} masked />
                   <Field label="Deployment Name" value={form.azure_openai_deployment} onChange={set('azure_openai_deployment')}
