@@ -51,7 +51,7 @@ _settings: Dict[str, Any] = {
     # Scoring thresholds
     "idle_threshold_pct":      float(os.getenv("IDLE_THRESHOLD_PCT",    "3.0")),
     "no_metrics_age_days":     int(os.getenv("NO_METRICS_AGE_DAYS",     "7")),
-    "cost_floor_usd":          float(os.getenv("COST_FLOOR_USD",        "1.0")),
+    "cost_floor_usd":          float(os.getenv("COST_FLOOR_USD",        "0.0")),
     "ai_cost_threshold_usd":   float(os.getenv("AI_COST_THRESHOLD_USD", "20.0")),
     "cache_ttl_seconds":       int(os.getenv("CACHE_TTL_SECONDS",       "1800")),
     # Security

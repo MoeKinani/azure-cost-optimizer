@@ -1274,7 +1274,8 @@ async def _build_dashboard(
     ]
 
     # ── Distinct resource groups for filter ────────────────────────────────
-    rg_list = sorted({r.resource_group for r in resource_metrics_list})
+    # Use pre-cost-floor resources so RGs with only cheap resources still appear in the dropdown
+    rg_list = sorted({r["resource_group"] for r in resources if r.get("resource_group")})
 
     # ── AI Narrative summary ────────────────────────────────────────────────
     ai_narrative: Optional[str] = None
