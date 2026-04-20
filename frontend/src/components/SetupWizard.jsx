@@ -288,10 +288,8 @@ function WizardSetup({ onComplete }) {
         persist_to_env: true,
       }
       if (clientSecret) body.AZURE_CLIENT_SECRET = clientSecret
-      if (selectedRG) {
-        body.SCAN_SCOPE_RESOURCE_GROUP  = selectedRG
-        body.SCAN_SCOPE_SUBSCRIPTION_ID = subId
-      }
+      body.SCAN_SCOPE_RESOURCE_GROUP  = selectedRG
+      body.SCAN_SCOPE_SUBSCRIPTION_ID = selectedRG ? subId : ''
       if (aiProvider !== 'none') {
         body.ai_provider = aiProvider
         if (aoaiKey)        body.AZURE_OPENAI_KEY        = aoaiKey
