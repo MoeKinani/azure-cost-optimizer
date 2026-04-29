@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { X, Settings, Eye, EyeOff, CheckCircle, AlertCircle, Loader, FlaskConical, Info } from 'lucide-react'
 import clsx from 'clsx'
 import { api } from '../api/client'
+import ScopePicker from './ScopePicker'
+import DeviceCodeLogin from './DeviceCodeLogin'
 
 function Field({ label, type = 'text', value, onChange, placeholder, masked, hint }) {
   const [show, setShow] = useState(false)
@@ -75,6 +77,7 @@ export default function SettingsPanel({ open, onClose, onSaved, subscriptions = 
   const [form,    setForm]    = useState({
     azure_client_id: '', azure_client_secret: '', azure_tenant_id: '',
     azure_subscription_id: '', azure_subscription_ids: '',
+    selected_scope_id: '', selected_scope_name: '',
     scan_scope_subscription_id: '', scan_scope_resource_group: '',
     ai_provider: 'azure_openai',
     azure_openai_endpoint: '',
@@ -84,19 +87,40 @@ export default function SettingsPanel({ open, onClose, onSaved, subscriptions = 
     cache_ttl_seconds: 1800, demo_mode: false,
     credential_timeout_hours: 0,
   })
-  const [loading,  setLoading]  = useState(false)
-  const [testing,  setTesting]  = useState(false)
-  const [status,   setStatus]   = useState(null)
+  const [loading,    setLoading]    = useState(false)
+  const [testing,    setTesting]    = useState(false)
+  const [status,     setStatus]     = useState(null)
+  const [authMethod, setAuthMethod] = useState('')
+
+  function handleScopeSelect(scope) {
+    if (!scope) {
+      setForm(prev => ({ ...prev, selected_scope_id: '', selected_scope_name: '', azure_subscription_ids: '' }))
+      return
+    }
+    const ids = scope.subscriptionIds.join(', ')
+    const name = `${scope.name}${scope.subscriptionIds.length > 1 ? ` (${scope.subscriptionIds.length} subscriptions)` : ''}`
+    setForm(prev => ({
+      ...prev,
+      selected_scope_id:   scope.id,
+      selected_scope_name: name,
+      azure_subscription_ids: ids,
+      // Auto-fill primary if empty
+      azure_subscription_id: prev.azure_subscription_id || (scope.subscriptionIds[0] ?? ''),
+    }))
+  }
 
   useEffect(() => {
     if (!open) return
+    api.getAuthMethod().then(r => setAuthMethod(r.method || '')).catch(() => {})
     api.getSettings().then(s => {
       setForm(prev => ({
         ...prev,
         azure_client_id:        s.azure_client_id        ?? '',
         azure_tenant_id:        s.azure_tenant_id        ?? '',
-        azure_subscription_id:  s.azure_subscription_id  ?? '',
+        azure_subscription_id:      s.azure_subscription_id      ?? '',
         azure_subscription_ids:     s.azure_subscription_ids     ?? '',
+        selected_scope_id:          s.selected_scope_id          ?? '',
+        selected_scope_name:        s.selected_scope_name        ?? '',
         scan_scope_subscription_id: s.scan_scope_subscription_id ?? '',
         scan_scope_resource_group:  s.scan_scope_resource_group  ?? '',
         ai_provider:                s.ai_provider                ?? 'azure_openai',
@@ -131,6 +155,8 @@ export default function SettingsPanel({ open, onClose, onSaved, subscriptions = 
       body.AZURE_TENANT_ID        = body.azure_tenant_id
       body.AZURE_SUBSCRIPTION_ID  = body.azure_subscription_id
       body.AZURE_SUBSCRIPTION_IDS       = body.azure_subscription_ids
+      body.SELECTED_SCOPE_ID            = body.selected_scope_id   || ''
+      body.SELECTED_SCOPE_NAME          = body.selected_scope_name || ''
       body.SCAN_SCOPE_SUBSCRIPTION_ID   = body.scan_scope_subscription_id || ''
       body.SCAN_SCOPE_RESOURCE_GROUP    = body.scan_scope_resource_group  || ''
       if (body.azure_client_secret) body.AZURE_CLIENT_SECRET = body.azure_client_secret
@@ -199,6 +225,20 @@ export default function SettingsPanel({ open, onClose, onSaved, subscriptions = 
           {/* ── Azure tab ── */}
           {tab === 'azure' && (
             <>
+              {/* ── Interactive sign-in (device code) ── */}
+              <div>
+                <p className="text-xs font-semibold text-gray-400 mb-2">Microsoft Account</p>
+                <DeviceCodeLogin onAuthChange={(s) => {
+                  if (s === 'authenticated') setStatus({ type: 'success', msg: 'Signed in. Refresh dashboard to scan.' })
+                }} />
+              </div>
+
+              <div className="flex items-center gap-2 my-1">
+                <div className="flex-1 border-t border-gray-800" />
+                <span className="text-xs text-gray-600">or use a Service Principal</span>
+                <div className="flex-1 border-t border-gray-800" />
+              </div>
+
               {/* ── Reconfigure button (shown when connected) ── */}
               {form.azure_subscription_id && (
                 <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-green-900/20 border border-green-800/40">
@@ -252,13 +292,34 @@ export default function SettingsPanel({ open, onClose, onSaved, subscriptions = 
               <Field label="Client ID"       value={form.azure_client_id}       onChange={set('azure_client_id')}       placeholder="App registration client ID" />
               <Field label="Client Secret"   value={form.azure_client_secret}   onChange={set('azure_client_secret')}   placeholder={form._has_azure_secret ? '(already set — leave blank to keep)' : 'Paste new secret'} masked />
               <Field label="Primary Subscription ID" value={form.azure_subscription_id} onChange={set('azure_subscription_id')} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
-              <Field
-                label="Additional Subscription IDs (optional)"
-                value={form.azure_subscription_ids}
-                onChange={set('azure_subscription_ids')}
-                placeholder="id1, id2, id3 — comma-separated"
-                hint="Scan multiple subscriptions in one dashboard. If set, all subscriptions listed here plus the Primary ID will be scanned."
+
+              {/* Management group scope picker */}
+              <ScopePicker
+                selectedScopeId={form.selected_scope_id}
+                selectedScopeName={form.selected_scope_name}
+                onSelect={handleScopeSelect}
+                authMethod={authMethod}
               />
+
+              {/* Manual override — shown when no scope is selected, or as read-only confirmation */}
+              {form.azure_subscription_ids && (
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium text-gray-500">
+                    Resolved subscription IDs
+                    {form.selected_scope_name && <span className="text-gray-700 ml-1">(from scope above)</span>}
+                  </label>
+                  <textarea
+                    value={form.azure_subscription_ids}
+                    onChange={e => {
+                      setForm(prev => ({ ...prev, azure_subscription_ids: e.target.value, selected_scope_id: '', selected_scope_name: '' }))
+                    }}
+                    rows={3}
+                    placeholder="id1, id2, id3 — comma-separated"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-400 font-mono placeholder-gray-700 focus:outline-none focus:border-blue-600 resize-none"
+                  />
+                  <p className="text-xs text-gray-700">Edit directly to override the scope selection.</p>
+                </div>
+              )}
               <button onClick={testAzure} disabled={testing} className="btn-ghost flex items-center gap-2 text-sm">
                 {testing && <Loader size={14} className="animate-spin" />} Test Azure Connection
               </button>

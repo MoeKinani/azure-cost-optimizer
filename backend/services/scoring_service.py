@@ -108,6 +108,7 @@ def detect_trend(
     cost_current: float,
     cost_previous: float,
     util_current: Optional[float],
+    cost_two_months_ago: Optional[float] = None,
 ) -> TrendDirection:
     if util_current is not None and util_current < IDLE_UTIL_THRESHOLD:
         if cost_previous > 0:
@@ -117,6 +118,16 @@ def detect_trend(
         delta_pct = ((cost_current - cost_previous) / cost_previous) * 100.0
     else:
         delta_pct = 0.0
+
+    # With 3 months of data, detect a sustained trend.
+    # Two consecutive periods both moving >5% in the same direction = confirmed trend,
+    # even when the most-recent delta alone falls within the ±10% stable band.
+    if cost_two_months_ago and cost_two_months_ago > 0 and cost_previous > 0:
+        delta_prev2 = ((cost_previous - cost_two_months_ago) / cost_two_months_ago) * 100.0
+        if delta_pct < -5.0 and delta_prev2 < -5.0:
+            return TrendDirection.FALLING
+        if delta_pct > 5.0 and delta_prev2 > 5.0:
+            return TrendDirection.RISING
 
     if delta_pct > STABLE_COST_BAND_PCT:
         return TrendDirection.RISING
@@ -201,6 +212,7 @@ def score_resource(
     has_inherited_lock: bool = False,  # RG/sub-level lock — floors at 51 (never "Likely Waste")
     is_protected: bool = False,      # S17: intent signal (RBAC, PE, RI, backup) — blocks Not Used but does NOT boost score
     peak_util_pct: Optional[float] = None,  # S18: maximum utilization in 30-day window
+    cost_two_months_ago: float = 0.0,       # enables 3-month sustained-trend detection
 ) -> tuple[float, float, int, TrendDirection, ScoreLabel]:
     """
     Returns (base_score, final_score, trend_modifier, trend, label).
@@ -215,7 +227,7 @@ def score_resource(
     # Direct resource lock = intentional human protection — floor at 60 (Actively Used).
     # RG/subscription inherited locks are handled as is_protected (floor at 26 only).
     if has_lock:
-        trend = detect_trend(cost_current, cost_previous, util_pct)
+        trend = detect_trend(cost_current, cost_previous, util_pct, cost_two_months_ago or None)
         trend_mod = TREND_MODIFIER.get(trend, 0) if trend not in (TrendDirection.IDLE,) else 0
         advisor_capped = max(advisor_score_delta, -20)  # softer cap for locked resources
         ai_capped = max(-10, min(10, ai_score_adjustment))
@@ -225,7 +237,7 @@ def score_resource(
     # Infrastructure resources (VNets, NSGs, DNS zones, etc.) have no utilisation
     # metrics by design — score them as neutral/active so they don't mislead as "Not Used".
     if is_infrastructure:
-        trend = detect_trend(cost_current, cost_previous, None)
+        trend = detect_trend(cost_current, cost_previous, None, cost_two_months_ago or None)
         trend_mod = TREND_MODIFIER.get(trend, 0) if trend not in (TrendDirection.IDLE,) else 0
         base = INFRASTRUCTURE_BASE_SCORE
         advisor_capped = max(advisor_score_delta, -35)
@@ -238,7 +250,7 @@ def score_resource(
     # so they appear as a cost-awareness item ("VM is stopped, disk/IP still cost money")
     # rather than "Not Used / delete this". They are NOT waste — they are intentionally off.
     if vm_is_deallocated:
-        trend = detect_trend(cost_current, cost_previous, None)
+        trend = detect_trend(cost_current, cost_previous, None, cost_two_months_ago or None)
         trend_mod = 0  # don't penalize trend when intentionally stopped
         advisor_capped = max(advisor_score_delta, -35)
         ai_capped = max(-30, min(10, ai_score_adjustment))
@@ -246,7 +258,7 @@ def score_resource(
         return 35.0, final, trend_mod, trend, _score_to_label(final)
 
     base  = _util_to_base_score(util_pct, has_any_activity, resource_age_days)
-    trend = detect_trend(cost_current, cost_previous, util_pct)
+    trend = detect_trend(cost_current, cost_previous, util_pct, cost_two_months_ago or None)
     trend_mod = TREND_MODIFIER[trend]
 
     # Idle penalties only apply when we have confirmed metrics data.

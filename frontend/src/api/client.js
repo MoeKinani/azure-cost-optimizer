@@ -23,9 +23,13 @@ export const api = {
   testAzure:             (body = {}) => request('/settings/test-azure',            { method: 'POST', body: JSON.stringify(body) }),
   testAI:                (body = {}) => request('/settings/test-ai',               { method: 'POST', body: JSON.stringify(body) }),
   exportSettings:        ()          => request('/settings/export'),
-  discoverSubscriptions: (authMethod = '') => request(`/settings/discover-subscriptions${authMethod ? `?auth_method=${authMethod}` : ''}`),
+  discoverSubscriptions:   (authMethod = '') => request(`/settings/discover-subscriptions${authMethod ? `?auth_method=${authMethod}` : ''}`),
+  discoverManagementGroups:(authMethod = '') => request(`/settings/management-groups${authMethod ? `?auth_method=${authMethod}` : ''}`),
   preflight:             ()               => request('/settings/preflight'),
   getAuthMethod:         ()               => request('/settings/auth-method'),
+  startDeviceCodeFlow:   ()               => request('/auth/device-code/start', { method: 'POST', body: '{}' }),
+  getDeviceCodeStatus:   ()               => request('/auth/device-code/status'),
+  signOut:               ()               => request('/auth/sign-out', { method: 'POST', body: '{}' }),
   getResourceGroups:     (subId = '')   => request(`/settings/resource-groups${subId ? `?subscription_id=${subId}` : ''}`),
 
   // SSE streaming dashboard — accepts optional URLSearchParams

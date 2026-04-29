@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import {
-  Key, RefreshCw, Loader, CheckCircle, ChevronRight,
+  Key, Loader, CheckCircle, ChevronRight,
   ChevronLeft, Cloud, Eye, EyeOff, AlertCircle, Layers, Settings,
-  Zap, Info,
+  Zap, Info, Monitor,
 } from 'lucide-react'
 import { api } from '../api/client'
+import DeviceCodeLogin from './DeviceCodeLogin'
+import ScopePicker from './ScopePicker'
 
 // ── Error message humanizer ────────────────────────────────────────────────────
 
@@ -234,9 +236,10 @@ function PermissionsGuide() {
 
 function WizardSetup({ onComplete }) {
   const [step,           setStep]          = useState(1)
-  const [discovering,    setDiscovering]   = useState(false)
-  const [subscriptions,  setSubscriptions] = useState([])
-  const [selectedSub,    setSelectedSub]   = useState(null)
+  const [authMode,       setAuthMode]      = useState('sp')      // 'sp' | 'device_code'
+  const [dcAuthenticated, setDcAuthenticated] = useState(false)
+  const [savingCreds,    setSavingCreds]   = useState(false)
+  const [selectedScope,  setSelectedScope] = useState(null)  // { id, name, subscriptionIds }
   const [tenantId,       setTenantId]      = useState('')
   const [clientId,       setClientId]      = useState('')
   const [clientSecret,   setClientSecret]  = useState('')
@@ -250,29 +253,38 @@ function WizardSetup({ onComplete }) {
   const [error,          setError]         = useState(null)
   const [saving,         setSaving]        = useState(false)
 
-  async function discover() {
-    setDiscovering(true); setError(null)
+  // Check if a device code session is already active (e.g. returning user)
+  useEffect(() => {
+    api.getDeviceCodeStatus()
+      .then(s => { if (s.status === 'authenticated') { setAuthMode('device_code'); setDcAuthenticated(true) } })
+      .catch(() => {})
+  }, [])
+
+  async function saveCredentials() {
+    setSavingCreds(true); setError(null)
     try {
-      await api.saveSettings({
-        AZURE_TENANT_ID: tenantId,
-        AZURE_CLIENT_ID: clientId,
-        AZURE_CLIENT_SECRET: clientSecret,
-      })
-      const res = await api.discoverSubscriptions('')
-      setSubscriptions(res.subscriptions || [])
-      if (!res.subscriptions?.length) setError('No subscriptions found. Make sure your account has access to at least one Azure subscription.')
-      else setStep(3)
+      if (authMode === 'sp') {
+        await api.saveSettings({
+          AZURE_TENANT_ID: tenantId,
+          AZURE_CLIENT_ID: clientId,
+          AZURE_CLIENT_SECRET: clientSecret,
+        })
+      }
+      setStep(3)
     } catch (err) {
       setError(humanizeError(err.message))
-    } finally { setDiscovering(false) }
+    } finally { setSavingCreds(false) }
   }
 
-  async function pickSub(sub) {
-    setSelectedSub(sub)
+  async function handleScopeSelect(scope) {
+    setSelectedScope(scope)
     setLoadingRGs(true)
     try {
-      const res = await api.getResourceGroups(sub.subscription_id)
-      setResourceGroups(res.resource_groups || [])
+      const primarySub = scope?.subscriptionIds?.[0]
+      if (primarySub) {
+        const res = await api.getResourceGroups(primarySub)
+        setResourceGroups(res.resource_groups || [])
+      }
     } catch { /* non-fatal */ }
     finally { setLoadingRGs(false) }
   }
@@ -280,16 +292,21 @@ function WizardSetup({ onComplete }) {
   async function launch() {
     setSaving(true); setError(null)
     try {
-      const subId = selectedSub.subscription_id
-      const body  = {
-        AZURE_SUBSCRIPTION_ID: subId,
-        AZURE_TENANT_ID: tenantId,
-        AZURE_CLIENT_ID: clientId,
+      const primarySub = selectedScope?.subscriptionIds?.[0] || ''
+      const body = {
+        AZURE_SUBSCRIPTION_ID:    primarySub,
+        AZURE_SUBSCRIPTION_IDS:   (selectedScope?.subscriptionIds || []).join(','),
+        SELECTED_SCOPE_ID:        selectedScope?.id   || '',
+        SELECTED_SCOPE_NAME:      selectedScope?.name || '',
         persist_to_env: true,
       }
-      if (clientSecret) body.AZURE_CLIENT_SECRET = clientSecret
+      if (authMode === 'sp') {
+        body.AZURE_TENANT_ID = tenantId
+        body.AZURE_CLIENT_ID = clientId
+        if (clientSecret) body.AZURE_CLIENT_SECRET = clientSecret
+      }
       body.SCAN_SCOPE_RESOURCE_GROUP  = selectedRG
-      body.SCAN_SCOPE_SUBSCRIPTION_ID = selectedRG ? subId : ''
+      body.SCAN_SCOPE_SUBSCRIPTION_ID = selectedRG ? primarySub : ''
       if (aiProvider !== 'none') {
         body.ai_provider = aiProvider
         if (aoaiKey)        body.AZURE_OPENAI_KEY        = aoaiKey
@@ -313,16 +330,67 @@ function WizardSetup({ onComplete }) {
           <div className="space-y-5">
             <div>
               <h2 className="text-base font-semibold text-white">Connect your Azure account</h2>
-              <p className="text-xs text-gray-500 mt-1">Create a service principal and assign the required roles.</p>
+              <p className="text-xs text-gray-500 mt-1">Choose how you want to authenticate.</p>
             </div>
-            <PermissionsGuide />
-            <TextField label="Tenant ID"     value={tenantId}     onChange={setTenantId}     placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" mono />
-            <TextField label="Client ID"     value={clientId}     onChange={setClientId}     placeholder="App registration client ID" mono />
-            <SecretField label="Client Secret" value={clientSecret} onChange={setClientSecret} placeholder="Paste client secret value" />
+
+            {/* Auth mode toggle */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => { setAuthMode('device_code'); setError(null) }}
+                className={clsx(
+                  'flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition-all',
+                  authMode === 'device_code'
+                    ? 'border-blue-500 bg-blue-950/40'
+                    : 'border-gray-700 bg-gray-800/40 hover:border-gray-600',
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Monitor size={13} className={authMode === 'device_code' ? 'text-blue-400' : 'text-gray-500'} />
+                  <span className="text-sm font-semibold text-white">Microsoft Account</span>
+                </div>
+                <span className="text-xs text-gray-500">Interactive sign-in</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuthMode('sp'); setError(null) }}
+                className={clsx(
+                  'flex flex-col items-start gap-1 p-3 rounded-xl border text-left transition-all',
+                  authMode === 'sp'
+                    ? 'border-blue-500 bg-blue-950/40'
+                    : 'border-gray-700 bg-gray-800/40 hover:border-gray-600',
+                )}
+              >
+                <div className="flex items-center gap-1.5">
+                  <Key size={13} className={authMode === 'sp' ? 'text-blue-400' : 'text-gray-500'} />
+                  <span className="text-sm font-semibold text-white">Service Principal</span>
+                </div>
+                <span className="text-xs text-gray-500">Client ID + secret</span>
+              </button>
+            </div>
+
+            {/* Service Principal fields */}
+            {authMode === 'sp' && (
+              <>
+                <PermissionsGuide />
+                <TextField label="Tenant ID"     value={tenantId}     onChange={setTenantId}     placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" mono />
+                <TextField label="Client ID"     value={clientId}     onChange={setClientId}     placeholder="App registration client ID" mono />
+                <SecretField label="Client Secret" value={clientSecret} onChange={setClientSecret} placeholder="Paste client secret value" />
+              </>
+            )}
+
+            {/* Device code sign-in */}
+            {authMode === 'device_code' && (
+              <DeviceCodeLogin
+                onAuthChange={s => setDcAuthenticated(s === 'authenticated')}
+              />
+            )}
+
             <button
               onClick={() => { setError(null); setStep(2) }}
-              disabled={!(tenantId && clientId && clientSecret)}
-              className="btn-primary w-full flex items-center justify-center gap-2 py-2.5">
+              disabled={authMode === 'sp' ? !(tenantId && clientId && clientSecret) : !dcAuthenticated}
+              className="btn-primary w-full flex items-center justify-center gap-2 py-2.5"
+            >
               Next <ChevronRight size={15} />
             </button>
           </div>
@@ -364,10 +432,10 @@ function WizardSetup({ onComplete }) {
                 <ChevronLeft size={14} /> Back
               </button>
               <button
-                onClick={discover}
-                disabled={discovering || (aiProvider === 'azure_openai' && !(aoaiEndpoint && aoaiKey))}
+                onClick={saveCredentials}
+                disabled={savingCreds || (aiProvider === 'azure_openai' && !(aoaiEndpoint && aoaiKey))}
                 className="btn-primary flex-1 flex items-center justify-center gap-2 py-2.5">
-                {discovering ? <><Loader size={14} className="animate-spin" /> Discovering…</> : <><RefreshCw size={14} /> Discover Subscriptions</>}
+                {savingCreds ? <><Loader size={14} className="animate-spin" /> Saving…</> : <>Next <ChevronRight size={14} /></>}
               </button>
             </div>
             {error && (
@@ -378,28 +446,19 @@ function WizardSetup({ onComplete }) {
           </div>
         )}
 
-        {/* ── Step 3: Pick subscription ── */}
+        {/* ── Step 3: Pick scope ── */}
         {step === 3 && (
           <div className="space-y-5">
             <div>
-              <h2 className="text-base font-semibold text-white">Pick your subscription</h2>
-              <p className="text-xs text-gray-500 mt-1">{subscriptions.length} subscription{subscriptions.length !== 1 ? 's' : ''} found.</p>
+              <h2 className="text-base font-semibold text-white">Select your scope</h2>
+              <p className="text-xs text-gray-500 mt-1">Pick a management group to scan all subscriptions beneath it, or select a single subscription.</p>
             </div>
-            <div className="flex flex-col gap-2 max-h-56 overflow-y-auto pr-1">
-              {subscriptions.map(sub => (
-                <button key={sub.subscription_id} type="button" onClick={() => pickSub(sub)}
-                  className={clsx('flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-xl border transition-all',
-                    selectedSub?.subscription_id === sub.subscription_id
-                      ? 'border-blue-500 bg-blue-950/40'
-                      : 'border-gray-700 bg-gray-800/40 hover:border-gray-600')}>
-                  <CheckCircle size={15} className={clsx('shrink-0', selectedSub?.subscription_id === sub.subscription_id ? 'text-blue-400' : 'text-gray-700')} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{sub.display_name || sub.subscription_id}</p>
-                    <p className="text-xs text-gray-600 font-mono truncate">{sub.subscription_id}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <ScopePicker
+              selectedScopeId={selectedScope?.id}
+              selectedScopeName={selectedScope?.name}
+              onSelect={handleScopeSelect}
+              authMethod={authMode === 'device_code' ? 'device_code' : ''}
+            />
             {error && (
               <div className="flex items-center gap-2 text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">
                 <AlertCircle size={13} className="shrink-0" /> {error}
@@ -409,7 +468,7 @@ function WizardSetup({ onComplete }) {
               <button onClick={() => { setStep(2); setError(null) }} className="btn-ghost flex items-center gap-1.5 px-4">
                 <ChevronLeft size={14} /> Back
               </button>
-              <button onClick={() => { setError(null); setStep(4) }} disabled={!selectedSub}
+              <button onClick={() => { setError(null); setStep(4) }} disabled={!selectedScope}
                 className="btn-primary flex-1 flex items-center justify-center gap-2 py-2.5">
                 Next <ChevronRight size={15} />
               </button>
@@ -426,9 +485,13 @@ function WizardSetup({ onComplete }) {
             </div>
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-950/30 border border-blue-800/40">
               <Cloud size={16} className="text-blue-400 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-white truncate">{selectedSub?.display_name || selectedSub?.subscription_id}</p>
-                <p className="text-xs text-gray-500 font-mono">{selectedSub?.subscription_id}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-white truncate">{selectedScope?.name}</p>
+                <p className="text-xs text-gray-500">
+                  {selectedScope?.subscriptionIds?.length === 1
+                    ? <span className="font-mono">{selectedScope.subscriptionIds[0]}</span>
+                    : `${selectedScope?.subscriptionIds?.length || 0} subscriptions`}
+                </p>
               </div>
             </div>
             <div className="space-y-2">
@@ -533,6 +596,19 @@ export default function SetupWizard({ settings, onLaunch }) {
             </button>
           </p>
         )}
+
+        {/* Buy Me a Coffee */}
+        <p className="text-center text-xs text-gray-700 mt-3">
+          Find this useful?{' '}
+          <a
+            href="https://buymeacoffee.com/moekinani"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-yellow-600 hover:text-yellow-400 transition-colors"
+          >
+            ☕ Buy me a coffee
+          </a>
+        </p>
       </div>
     </div>
   )

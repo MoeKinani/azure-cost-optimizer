@@ -31,7 +31,7 @@ from models.schemas import (
     RightSizeOpportunity, SavingsRecommendation, ScoreDistribution,
     ScoreLabel, SubscriptionSummary, TrendDirection,
 )
-from services.cost_service     import get_two_month_costs, get_daily_costs, get_monthly_cost_history, get_total_daily_costs, get_reservation_covered_resource_ids
+from services.cost_service     import get_three_month_costs, get_daily_costs, get_monthly_cost_history, get_total_daily_costs, get_reservation_covered_resource_ids
 from services.metrics_service  import get_resource_metrics
 from services.resource_service import list_all_resources, find_orphans, get_app_service_plan_links, get_vm_power_states, get_resource_locks, get_app_insights_links, get_vm_attachments, get_rbac_signals, get_reservation_coverage, get_reservation_recommendations, get_private_endpoint_targets, get_sql_replica_ids, get_app_service_details, get_backup_protected_ids, get_openai_deployments
 from services.storage_access_service  import get_storage_access_signals
@@ -62,6 +62,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "   # Vite inlines scripts in dev
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none';"
+        )
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)
@@ -351,16 +361,16 @@ async def _build_dashboard(
     await report("resources", f"Listing resources across {len(sub_ids)} subscription(s)…", 5)
 
     resources_task      = loop.run_in_executor(executor, partial(list_all_resources, sub_ids))
-    costs_task          = loop.run_in_executor(executor, partial(get_two_month_costs, sub_ids))
+    costs_task          = loop.run_in_executor(executor, partial(get_three_month_costs, sub_ids))
     advisor_task        = loop.run_in_executor(executor, partial(get_advisor_recommendations, sub_ids))
     daily_task          = loop.run_in_executor(executor, partial(get_daily_costs, 60, sub_ids))
     monthly_hist_task   = loop.run_in_executor(executor, partial(get_monthly_cost_history, 6, sub_ids))
     total_daily_task    = loop.run_in_executor(executor, partial(get_total_daily_costs, sub_ids))
     sub_names_task      = loop.run_in_executor(executor, partial(_fetch_subscription_names, sub_ids))
 
-    await report("costs", f"Fetching 2 months of cost data across {len(sub_ids)} subscription(s)…", 15)
+    await report("costs", f"Fetching 3 months of cost data across {len(sub_ids)} subscription(s)…", 15)
 
-    resources, (curr_costs, prev_costs, cost_fetch_error), advisor_map, daily_costs_raw, monthly_hist_raw, (total_daily_cm, total_daily_pm), sub_names = await asyncio.gather(
+    resources, (curr_costs, prev_costs, prev2_costs, cost_fetch_error), advisor_map, daily_costs_raw, monthly_hist_raw, (total_daily_cm, total_daily_pm), sub_names = await asyncio.gather(
         resources_task, costs_task, advisor_task, daily_task, monthly_hist_task, total_daily_task, sub_names_task
     )
 
@@ -530,7 +540,8 @@ async def _build_dashboard(
         rid_lower = r["id"].lower()
         cost_curr = curr_costs.get(rid_lower, 0.0)
         cost_prev = prev_costs.get(rid_lower, 0.0)
-        if cost_curr < cost_floor and cost_prev < cost_floor:
+        cost_2mo  = prev2_costs.get(rid_lower, 0.0)
+        if cost_curr < cost_floor and cost_prev < cost_floor and cost_2mo < cost_floor:
             continue
 
         # ── MTD-to-MTD delta (the only fair comparison during a live month) ───
@@ -736,6 +747,7 @@ async def _build_dashboard(
             has_inherited_lock=r.get("has_inherited_lock", False),
             is_protected=is_protected,
             peak_util_pct=peak_util_pct,
+            cost_two_months_ago=cost_2mo,
         )
         # Partial month: use previous month as savings baseline so estimates
         # reflect a realistic full-month figure rather than 2–6 days of spend.
@@ -770,7 +782,10 @@ async def _build_dashboard(
                     days_idle = max(0, (now - ref_dt).days)
                     idle_since_date = ref_dt.date().isoformat()
                     if days_idle > 0 and cost_curr > 0:
-                        daily_rate = cost_curr / 30.0
+                        # 3-month average smooths out anomalous months for a truer waste rate
+                        cost_months = [m for m in [cost_curr, cost_prev, cost_2mo] if m > 0]
+                        avg_monthly = sum(cost_months) / len(cost_months)
+                        daily_rate  = avg_monthly / 30.0
                         cumulative_waste_usd = round(daily_rate * days_idle, 2)
                 except Exception:
                     pass
@@ -861,6 +876,7 @@ async def _build_dashboard(
             "location": r.get("location",""), "sku": r.get("sku"),
             "cost_current_month": round(cost_curr, 4), "cost_previous_month": round(cost_prev, 4),
             "cost_previous_month_mtd": round(cost_prev_mtd, 4),
+            "cost_two_months_ago": round(cost_2mo, 4),
             "cost_delta_is_mtd": delta_is_mtd,
             "cost_delta_pct": round(cost_delta_pct, 2),
             "avg_cpu_pct":    round(metrics.cpu,    2) if metrics and metrics.cpu    is not None else None,
@@ -1448,7 +1464,7 @@ async def stream_dashboard(
             await progress_q.put({"type": "done", "pct": 100, "data": data.model_dump()})
         except Exception as exc:
             logger.exception("Dashboard build failed")
-            await progress_q.put({"type": "error", "message": str(exc)})
+            await progress_q.put({"type": "error", "message": "Dashboard build failed. Check your Azure credentials and permissions."})
 
     asyncio.create_task(build_task())
 
@@ -1484,10 +1500,11 @@ async def get_dashboard(refresh: bool = False):
         _cache.update({"data": data, "cached_at": now})
         return data
     except EnvironmentError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("Dashboard environment error: %s", exc)
+        raise HTTPException(status_code=500, detail="Azure credentials not configured. Complete setup in Settings.")
     except Exception as exc:
         logger.exception("Dashboard build failed")
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail="Dashboard build failed. Check your Azure credentials and permissions.")
 
 
 @app.get("/api/resources", response_model=List[ResourceMetrics])
@@ -1566,6 +1583,25 @@ async def preflight_check():
     return result
 
 
+@app.get("/api/settings/management-groups")
+async def get_management_groups_endpoint(auth_method: str = ""):
+    """
+    Return the full management group hierarchy the credential can access.
+    Fetches the tenant root group with recurse=True — single API call.
+    Pass auth_method=az_login to use AzureCliCredential directly.
+    """
+    from services.management_group_service import discover_management_groups
+    try:
+        result = discover_management_groups(auth_method=auth_method or None)
+        return result
+    except Exception as exc:
+        logger.warning("Management group discovery failed: %s", exc)
+        msg = str(exc)
+        if "AuthorizationFailed" in msg or "does not have authorization" in msg:
+            raise HTTPException(status_code=403, detail="Access denied. Assign Management Group Reader role to your service principal.")
+        raise HTTPException(status_code=400, detail="Failed to fetch management groups. Check credentials and permissions.")
+
+
 @app.get("/api/settings/discover-subscriptions")
 async def discover_subscriptions_endpoint(auth_method: str = ""):
     """
@@ -1578,7 +1614,13 @@ async def discover_subscriptions_endpoint(auth_method: str = ""):
         subs = discover_subscriptions(auth_method=auth_method or None)
         return {"subscriptions": subs}
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        logger.warning("Subscription discovery failed: %s", exc)
+        msg = str(exc)
+        if "No subscriptions found" in msg:
+            raise HTTPException(status_code=400, detail="No subscriptions found. Make sure your account has access to at least one Azure subscription.")
+        if "AuthorizationFailed" in msg or "does not have authorization" in msg:
+            raise HTTPException(status_code=403, detail="Access denied. Assign Reader and Cost Management Reader roles to your service principal.")
+        raise HTTPException(status_code=400, detail="Failed to discover subscriptions. Check your credentials and permissions.")
 
 
 @app.get("/api/settings/auth-method")
@@ -1586,6 +1628,31 @@ async def get_auth_method_endpoint():
     """Returns which auth method is currently active."""
     from services.azure_auth import get_auth_method
     return {"method": get_auth_method()}
+
+
+# ── Device Code Flow endpoints ─────────────────────────────────────────────────
+
+@app.post("/api/auth/device-code/start")
+async def device_code_start():
+    """Start a device code auth flow in a background thread. Returns immediately."""
+    from services.azure_auth import start_device_code_flow
+    start_device_code_flow()
+    return {"started": True}
+
+
+@app.get("/api/auth/device-code/status")
+async def device_code_status():
+    """Poll the current state of the device code flow."""
+    from services.azure_auth import get_device_code_status
+    return get_device_code_status()
+
+
+@app.post("/api/auth/sign-out")
+async def sign_out():
+    """Clear the active device code session."""
+    from services.azure_auth import sign_out_device_code
+    sign_out_device_code()
+    return {"signed_out": True}
 
 
 @app.get("/api/settings/resource-groups")
@@ -1601,7 +1668,8 @@ async def list_resource_groups_endpoint(subscription_id: str = ""):
         rgs = sorted([rg.name for rg in client.resource_groups.list()])
         return {"resource_groups": rgs}
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        logger.warning("Resource group listing failed for subscription %s: %s", sub_id[:8] + "...", exc)
+        raise HTTPException(status_code=400, detail="Failed to list resource groups. Check credentials and subscription access.")
 
 
 @app.post("/api/settings")
@@ -1638,7 +1706,17 @@ async def test_azure(body: dict):
         list(client.resource_groups.list())
         return {"ok": True, "message": "Connected successfully."}
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Connection failed: {exc}")
+        logger.warning("Azure connection test failed: %s", exc)
+        msg = str(exc)
+        if "AADSTS7000215" in msg:
+            raise HTTPException(status_code=400, detail="Invalid client secret. Make sure you copied the secret Value, not the Secret ID.")
+        if "AADSTS50034" in msg or "does not exist" in msg:
+            raise HTTPException(status_code=400, detail="App registration not found. Verify your Client ID and Tenant ID.")
+        if "AADSTS50126" in msg:
+            raise HTTPException(status_code=400, detail="Wrong credentials. Double-check your Client Secret.")
+        if "AuthorizationFailed" in msg or "does not have authorization" in msg:
+            raise HTTPException(status_code=400, detail="Missing permissions. Assign Reader and Cost Management Reader roles to this app on your subscription.")
+        raise HTTPException(status_code=400, detail="Connection failed. Verify your Tenant ID, Client ID, Client Secret, and Subscription ID.")
 
 
 @app.post("/api/settings/test-ai")
@@ -1655,7 +1733,11 @@ async def test_ai(body: dict):
                                     messages=[{"role": "user", "content": "Hi"}])
             return {"ok": True, "message": "Claude (Anthropic) API key is valid."}
         except Exception as exc:
-            raise HTTPException(status_code=400, detail=f"Claude key validation failed: {exc}")
+            logger.warning("Anthropic API key validation failed: %s", exc)
+            msg = str(exc)
+            if "401" in msg or "authentication" in msg.lower() or "invalid" in msg.lower():
+                raise HTTPException(status_code=400, detail="Invalid Anthropic API key. Check your key in console.anthropic.com.")
+            raise HTTPException(status_code=400, detail="Claude API validation failed. Check your API key and network connectivity.")
 
     elif provider == "azure_openai":
         endpoint   = body.get("AZURE_OPENAI_ENDPOINT")   or settings_svc.get_value("AZURE_OPENAI_ENDPOINT", "")
@@ -1693,8 +1775,9 @@ async def test_ai(body: dict):
             if "401" in err or "authentication" in err.lower() or "unauthorized" in err.lower():
                 raise HTTPException(status_code=400, detail="Invalid API key. Check Azure Portal → Azure OpenAI → Keys and Endpoint.")
             if "name or service not known" in err.lower() or "nodename" in err.lower():
-                raise HTTPException(status_code=400, detail=f"Endpoint URL not reachable: {endpoint}. Check the URL in Azure Portal → Azure OpenAI → Keys and Endpoint.")
-            raise HTTPException(status_code=400, detail=f"Azure OpenAI error: {err}")
+                raise HTTPException(status_code=400, detail="Endpoint URL not reachable. Check the URL in Azure Portal → Azure OpenAI → Keys and Endpoint.")
+            logger.warning("Azure OpenAI validation failed: %s", exc)
+            raise HTTPException(status_code=400, detail="Azure OpenAI connection failed. Verify your endpoint, key, and deployment name.")
 
     raise HTTPException(status_code=400, detail="Select a provider (claude or azure_openai) to test.")
 

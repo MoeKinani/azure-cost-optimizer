@@ -40,6 +40,9 @@ _settings: Dict[str, Any] = {
     # Scan scope — optional, limits scans to a specific subscription/RG for testing
     "SCAN_SCOPE_SUBSCRIPTION_ID": os.getenv("SCAN_SCOPE_SUBSCRIPTION_ID", ""),
     "SCAN_SCOPE_RESOURCE_GROUP":  os.getenv("SCAN_SCOPE_RESOURCE_GROUP",  ""),
+    # Selected management group scope (display metadata only — resolved sub IDs live in AZURE_SUBSCRIPTION_IDS)
+    "SELECTED_SCOPE_ID":   os.getenv("SELECTED_SCOPE_ID",   ""),
+    "SELECTED_SCOPE_NAME": os.getenv("SELECTED_SCOPE_NAME", ""),
     # AI — provider selection
     "ai_provider":             os.getenv("AI_PROVIDER", "none"),  # "claude" | "azure_openai" | "none"
     # Claude (Anthropic)
@@ -67,7 +70,7 @@ _cred_last_used: float = time.time()
 # Keys that hold secrets — candidates for auto-wipe
 _SECRET_KEYS = {"AZURE_CLIENT_SECRET", "ANTHROPIC_API_KEY", "AZURE_OPENAI_KEY"}
 
-_AZURE_KEYS = {"AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID", "AZURE_SUBSCRIPTION_IDS"}
+_AZURE_KEYS = {"AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID", "AZURE_SUBSCRIPTION_IDS", "SELECTED_SCOPE_ID", "SELECTED_SCOPE_NAME"}
 
 
 def get() -> Dict[str, Any]:
@@ -114,6 +117,9 @@ def safe_export() -> Dict[str, Any]:
     for field in ("AZURE_CLIENT_SECRET", "ANTHROPIC_API_KEY", "AZURE_OPENAI_KEY"):
         v = s.get(field, "")
         s[field] = ("••••" + v[-4:]) if len(v) > 4 else ("••••" if v else "")
+    # Convenience flags consumed by the frontend
+    s["has_azure_secret"]    = bool(_settings.get("AZURE_CLIENT_SECRET", ""))
+    s["has_azure_openai_key"] = bool(_settings.get("AZURE_OPENAI_KEY", ""))
     return s
 
 
@@ -183,7 +189,7 @@ def _write_env_file() -> None:
                 k, v = line.split("=", 1)
                 existing[k.strip()] = v.strip()
 
-    persist_keys = list(_AZURE_KEYS) + ["ANTHROPIC_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_KEY", "AZURE_OPENAI_DEPLOYMENT", "ai_provider", "AZURE_SUBSCRIPTION_IDS", "SCAN_SCOPE_SUBSCRIPTION_ID", "SCAN_SCOPE_RESOURCE_GROUP", "credential_timeout_hours"]
+    persist_keys = list(_AZURE_KEYS) + ["ANTHROPIC_API_KEY", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_KEY", "AZURE_OPENAI_DEPLOYMENT", "ai_provider", "AZURE_SUBSCRIPTION_IDS", "SCAN_SCOPE_SUBSCRIPTION_ID", "SCAN_SCOPE_RESOURCE_GROUP", "SELECTED_SCOPE_ID", "SELECTED_SCOPE_NAME", "credential_timeout_hours"]
     for key in persist_keys:
         val = _settings.get(key, "")
         if val:

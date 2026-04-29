@@ -38,6 +38,7 @@ class ResourceMetrics(BaseModel):
     cost_current_month:      float = 0.0
     cost_previous_month:     float = 0.0
     cost_previous_month_mtd: float = 0.0   # last month spend for same elapsed days (MTD-to-MTD delta)
+    cost_two_months_ago:     float = 0.0   # full month 2 months back — enables 3-month trend detection
     cost_delta_is_mtd:       bool  = False  # True = delta is MTD-to-MTD, False = full month fallback
     cost_delta_pct:          float = 0.0
 

@@ -1,8 +1,19 @@
 # Credentials & settings (saved via the UI — never commit these)
 config/
+.env
+.env.local
+.env.*.local
 backend/.env
 backend/.env.local
 backend/.env.*.local
+
+# Private keys & certificates — never commit
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
 
 # Python
 backend/.venv/
@@ -19,10 +30,12 @@ frontend/dist/
 *.log
 logs/
 
-# Screenshots and internal session images
+# Screenshots and internal session images (exclude root-level dev screenshots)
 image*.png
 Screenshot*.png
 *screenshot*.png
+# But allow docs/screenshots/ for README assets
+!docs/screenshots/*.png
 
 # Internal development notes (backlog, session history)
 IMPROVEMENTS.md

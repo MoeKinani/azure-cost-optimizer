@@ -339,7 +339,7 @@ function AppInner() {
       },
       // onError — fall back to regular endpoint
       async (err) => {
-        console.warn('SSE failed, falling back to REST:', err.message)
+        console.warn('SSE connection failed, retrying with REST...')
         try {
           const result = await api.getDashboard(forceRefresh)
           setData(result)

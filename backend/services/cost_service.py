@@ -146,41 +146,50 @@ def _query_costs(
     return result, None
 
 
-def get_two_month_costs(
+def get_three_month_costs(
     subscription_ids: Optional[List[str]] = None,
-) -> Tuple[Dict[str, float], Dict[str, float], Optional[str]]:
+) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float], Optional[str]]:
     """
-    Returns (current_month_costs, previous_month_costs, error_str) where each cost dict is
-    {resource_id_lower: cost_usd}, aggregated across all subscriptions.
-    error_str is None on success or a human-readable error string on failure.
+    Returns (current_month, previous_month, two_months_ago, error_str).
+    Each dict is {resource_id_lower: cost_usd}, aggregated across all subscriptions.
+    The third month improves trend detection and cumulative waste accuracy.
     """
     credential = get_credential()
     sub_ids    = subscription_ids or get_subscription_ids()
     client     = CostManagementClient(credential)
 
     now = datetime.now(tz=timezone.utc)
-    curr_start, curr_end = _month_range(now.year, now.month)
-    prev_dt = now - relativedelta(months=1)
-    prev_start, prev_end = _month_range(prev_dt.year, prev_dt.month)
+    curr_start,  curr_end  = _month_range(now.year, now.month)
+    prev_dt                = now - relativedelta(months=1)
+    prev_start,  prev_end  = _month_range(prev_dt.year, prev_dt.month)
+    prev2_dt               = now - relativedelta(months=2)
+    prev2_start, prev2_end = _month_range(prev2_dt.year, prev2_dt.month)
 
-    current:  Dict[str, float] = {}
-    previous: Dict[str, float] = {}
+    current:   Dict[str, float] = {}
+    previous:  Dict[str, float] = {}
+    prev2:     Dict[str, float] = {}
     first_error: Optional[str] = None
 
     for sub_id in sub_ids:
         scope = f"/subscriptions/{sub_id}"
-        logger.info("[%s] Fetching current month costs (%s – %s)", sub_id, curr_start.date(), curr_end.date())
-        curr, err = _query_costs(client, scope, curr_start, curr_end)
+        logger.info("[%s] Fetching current month costs (%s – %s)",   sub_id, curr_start.date(),  curr_end.date())
+        curr,  err = _query_costs(client, scope, curr_start,  curr_end)
         if err and not first_error:
             first_error = err
-        logger.info("[%s] Fetching previous month costs (%s – %s)", sub_id, prev_start.date(), prev_end.date())
-        prev, err = _query_costs(client, scope, prev_start, prev_end)
+        logger.info("[%s] Fetching previous month costs (%s – %s)",  sub_id, prev_start.date(),  prev_end.date())
+        prev,  err = _query_costs(client, scope, prev_start,  prev_end)
+        if err and not first_error:
+            first_error = err
+        logger.info("[%s] Fetching 2-months-ago costs (%s – %s)",    sub_id, prev2_start.date(), prev2_end.date())
+        p2,    err = _query_costs(client, scope, prev2_start, prev2_end)
         if err and not first_error:
             first_error = err
         for rid, cost in curr.items():
-            current[rid] = current.get(rid, 0.0) + cost
+            current[rid]  = current.get(rid,  0.0) + cost
         for rid, cost in prev.items():
             previous[rid] = previous.get(rid, 0.0) + cost
+        for rid, cost in p2.items():
+            prev2[rid]    = prev2.get(rid,    0.0) + cost
 
     if not current and not previous:
         logger.error(
@@ -191,10 +200,18 @@ def get_two_month_costs(
         )
     else:
         logger.info(
-            "Cost query complete: %d current, %d previous resources across %d subscription(s)",
-            len(current), len(previous), len(sub_ids),
+            "Cost query complete: %d current, %d previous, %d two-months-ago resources across %d subscription(s)",
+            len(current), len(previous), len(prev2), len(sub_ids),
         )
-    return current, previous, first_error
+    return current, previous, prev2, first_error
+
+
+def get_two_month_costs(
+    subscription_ids: Optional[List[str]] = None,
+) -> Tuple[Dict[str, float], Dict[str, float], Optional[str]]:
+    """Backward-compat wrapper — returns (current, previous, error). Use get_three_month_costs for new code."""
+    curr, prev, _, err = get_three_month_costs(subscription_ids)
+    return curr, prev, err
 
 
 def get_reservation_covered_resource_ids(
