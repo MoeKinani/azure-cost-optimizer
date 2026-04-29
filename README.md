@@ -130,6 +130,9 @@ Wait 2-5 minutes for roles to propagate before launching.
 | Reader | List all resources |
 | Cost Management Reader | Pull billing and cost data |
 | Monitoring Reader | Read CPU, memory, and usage metrics |
+| Management Group Reader | Browse Root Management Group hierarchy (optional) |
+
+> **Management Group Reader is optional.** Without it the tool falls back to a flat subscription list — you can still scan normally, you just won't see the MG hierarchy in the scope picker. To enable it, assign the role at the Root Management Group scope in Azure Portal under Management Groups > Access control (IAM).
 
 ![IAM role assignments in Azure Portal](docs/screenshots/iam-roles.png)
 
@@ -153,7 +156,9 @@ Sign in interactively with your **Microsoft Account** (no app registration neede
 
 ### Select your scope
 
-Browse your **Root Management Group** hierarchy and pick any group to scan all subscriptions beneath it in one pass — no need to add subscriptions one by one. The tool falls back to a flat subscription list automatically if you do not have Management Group Reader access.
+Browse your **Root Management Group** hierarchy and pick any group to scan all subscriptions beneath it in one pass — no need to add subscriptions one by one.
+
+If your account does not have the **Management Group Reader** role, the tool falls back to a flat subscription list automatically. Your scan is not blocked — you just select a subscription directly instead of picking from the MG tree.
 
 ![Setup wizard — management group scope picker](docs/screenshots/setup-scope.png)
 
