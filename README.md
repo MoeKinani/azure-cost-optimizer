@@ -54,13 +54,13 @@ Enterprise Azure cost tools are expensive and require you to hand your billing d
 - 🔍 **0-100 resource scoring** based on real Azure Monitor metrics — CPU, memory, network, storage, AI tokens
 - 🔑 **Two auth options** — sign in with your Microsoft Account interactively, or use a Service Principal for unattended access
 - 🌳 **Root Management Group support** — browse your full MG hierarchy and scan all subscriptions beneath any group in one pass
-- 🤖 **AI-assisted scoring** — connect Azure OpenAI or Anthropic Claude to get plain-English explanations and catch false positives
+- 🤖 **AI-assisted scoring** — connect Azure OpenAI to get plain-English explanations and catch false positives
 - 🧹 **Orphan detection** — unattached disks, unused public IPs, deallocated VMs, empty App Service Plans
 - 📈 **3 months of billing history** — sustained cost trends flagged before they become a problem
 - 📊 **Industry benchmarking** — see how your waste rate, resource health, and tag compliance compare to similar environments
 - 🌍 **Carbon footprint tracking** — CO₂ estimates with tree and flight equivalents
 - 📄 **PDF export** — shareable reports for stakeholder and board reviews
-- 🔒 **No telemetry** — read-only roles, no write access, no data sent anywhere. AI features are optional; when enabled, resource metadata is sent to your chosen AI provider (Azure OpenAI or Anthropic)
+- 🔒 **No telemetry** — read-only roles, no write access, no data sent anywhere. AI features are optional; when enabled, resource metadata is sent to your Azure OpenAI instance
 
 ---
 
@@ -200,7 +200,7 @@ Resources with locks, backups, private endpoints, or active reservations are fla
 - Read-only roles only — the service principal cannot modify or delete any Azure resource
 - Credentials stored locally in a `.env` file excluded from version control
 - All Azure API calls go directly from your machine to Azure — no intermediary servers, no telemetry
-- AI features are optional; when enabled, resource metadata is sent only to your configured provider (Azure OpenAI or Anthropic)
+- AI features are optional; when enabled, resource metadata is sent only to your Azure OpenAI instance
 
 ---
 
