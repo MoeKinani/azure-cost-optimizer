@@ -136,8 +136,11 @@ def _query_costs(
         for row in response.rows:
             rid  = str(row[rid_idx]).lower().strip()
             cost = float(row[cost_idx])
-            if rid:
-                result[rid] = result.get(rid, 0.0) + cost
+            # Use "__unassigned__" for rows with no ResourceId (subscription-level
+            # charges: Defender, Support, Marketplace, credits) so they are counted
+            # in sum(result.values()) but never matched to any real resource.
+            key  = rid if rid else "__unassigned__"
+            result[key] = result.get(key, 0.0) + cost
     except Exception as exc:
         msg = type(exc).__name__ + ": " + str(exc)
         logger.error("Cost query failed for %s (%s–%s): %s", scope, start.date(), end.date(), exc)

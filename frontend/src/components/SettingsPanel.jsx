@@ -277,15 +277,17 @@ export default function SettingsPanel({ open, onClose, onSaved, subscriptions = 
               <div className="rounded-lg border border-blue-800/40 bg-blue-950/20 p-4 space-y-2">
                 <div className="flex items-center gap-2">
                   <Info size={13} className="text-blue-400 shrink-0" />
-                  <p className="text-xs font-semibold text-blue-300">Required roles on your subscription</p>
+                  <p className="text-xs font-semibold text-blue-300">Required roles — assign at Management Group scope</p>
                 </div>
                 <ul className="text-xs text-gray-400 space-y-1 pl-1">
                   <li><strong className="text-gray-300">Reader</strong> — enumerate resources and their properties</li>
                   <li><strong className="text-gray-300">Cost Management Reader</strong> — pull spend and billing data</li>
                   <li><strong className="text-gray-300">Monitoring Reader</strong> — fetch CPU, memory and network metrics</li>
+                  <li><strong className="text-gray-300">Management Group Reader</strong> — required for the scope picker</li>
                 </ul>
                 <p className="text-xs text-gray-600 pt-1">
-                  Create a service principal in Azure AD, assign these roles at subscription scope, then paste the credentials below.
+                  Assign at Management Group scope so roles cascade to all subscriptions beneath it.
+                  Portal → Management Groups → your root MG → Access control (IAM) → Add role assignment
                 </p>
               </div>
               <Field label="Tenant ID"       value={form.azure_tenant_id}       onChange={set('azure_tenant_id')}       placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />

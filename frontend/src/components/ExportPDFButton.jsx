@@ -1219,6 +1219,169 @@ function SubscriptionBreakdownPage({ subscriptions, subscriptionId }) {
   )
 }
 
+// ── AI Cost ───────────────────────────────────────────────────────────────────
+
+const AI_TYPE_MAP = {
+  'microsoft.cognitiveservices/accounts':         'Cognitive Services / OpenAI',
+  'microsoft.machinelearningservices/workspaces': 'ML Workspace',
+  'microsoft.search/searchservices':              'AI Search',
+  'microsoft.botservice/botservices':             'Bot Service',
+  'microsoft.documentintelligence/accounts':      'Document Intelligence',
+  'microsoft.synapse/workspaces':                 'Synapse',
+  'microsoft.databricks/workspaces':              'Databricks',
+}
+
+function isAIResource(type) {
+  const t = (type || '').toLowerCase()
+  return Object.keys(AI_TYPE_MAP).some(p => t.startsWith(p))
+}
+function aiLabel(type) {
+  const t = (type || '').toLowerCase()
+  for (const [p, l] of Object.entries(AI_TYPE_MAP)) { if (t.startsWith(p)) return l }
+  return (type || '').split('/').pop()
+}
+function fmtTokens(n) {
+  if (n == null || n === 0) return '—'
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
+  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000)         return `${(n / 1_000).toFixed(0)}K`
+  return String(Math.round(n))
+}
+function fmtCalls(n) {
+  if (n == null || n === 0) return '—'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`
+  return String(Math.round(n))
+}
+
+function AICostPage({ resources, kpi, subscriptionId }) {
+  const aiResources = (resources || [])
+    .filter(r => isAIResource(r.resource_type))
+    .sort((a, b) => (b.cost_current_month || 0) - (a.cost_current_month || 0))
+
+  if (!aiResources.length) return null
+
+  const totalCost      = aiResources.reduce((s, r) => s + (r.cost_current_month || 0), 0)
+  const totalTokens    = aiResources.reduce((s, r) => s + (r.total_tokens || 0), 0)
+  const totalCalls     = aiResources.reduce((s, r) => s + (r.total_calls || 0), 0)
+  const throttledCount = aiResources.filter(r => r.blocked_calls > 0).length
+  const idleCount      = aiResources.filter(r => r.score_label === 'Not Used' || r.score_label === 'Rarely Used').length
+  const ptuCount       = aiResources.filter(r => r.billing_type === 'ptu').length
+  const thisMoLabel    = kpi?.billing_basis === 'current_month' ? 'This Month (MTD)' : 'This Month'
+
+  const kpis = [
+    { label: 'AI Spend',          value: fmt(totalCost),          sub: `${aiResources.length} AI resources`,    color: '#6366f1' },
+    { label: 'Total Tokens (30d)',value: fmtTokens(totalTokens),  sub: totalCalls > 0 ? `${fmtCalls(totalCalls)} API calls` : 'No token data', color: '#8b5cf6' },
+    { label: 'Throttled Services',value: String(throttledCount),  sub: 'With blocked calls recorded',           color: throttledCount > 0 ? C.warn : C.success },
+    { label: 'Idle AI Resources', value: String(idleCount),       sub: 'Not Used / Rarely Used',               color: idleCount > 0 ? C.danger : C.success },
+    { label: 'PTU Deployments',   value: String(ptuCount),        sub: 'Provisioned Throughput Units',         color: '#818cf8' },
+    { label: '% of Azure Bill',   value: `${kpi?.total_cost_current_month > 0 ? ((totalCost / kpi.total_cost_current_month) * 100).toFixed(1) : '0'}%`, sub: 'AI share of total spend', color: C.accent },
+  ]
+
+  return (
+    <Page size="A4" style={s.page}>
+      <View style={s.inner}>
+        <View style={s.sectionHeader}>
+          <Text style={s.sectionTitle}>AI &amp; Cognitive Services Cost</Text>
+          <View style={{ ...s.sectionBadge, backgroundColor: '#312e81' }}>
+            <Text style={s.sectionBadgeText}>{aiResources.length} SERVICES</Text>
+          </View>
+        </View>
+
+        <View style={s.kpiGrid}>
+          {kpis.map((k, i) => (
+            <View key={i} style={{ ...s.kpiCard, borderTopColor: k.color }}>
+              <Text style={s.kpiLabel}>{k.label}</Text>
+              <Text style={{ ...s.kpiValue, fontSize: 18, color: C.white }}>{k.value}</Text>
+              <Text style={s.kpiSub}>{k.sub}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Resource detail table */}
+        <View style={s.table}>
+          <View style={s.tableHead}>
+            <Text style={{ ...s.tableHeadCell, flex: 2.2 }}>Resource</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 1.4 }}>Service Type</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 0.9 }}>{thisMoLabel}</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 0.9 }}>Last Month</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 1 }}>Tokens (30d)</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 0.8 }}>Calls</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 0.8 }}>Status</Text>
+          </View>
+          {aiResources.map((r, i) => {
+            const throttlePct = r.total_calls > 0 ? ((r.blocked_calls || 0) / r.total_calls) * 100 : null
+            const scoreColor  = (r.final_score ?? 100) <= 25 ? C.danger : (r.final_score ?? 100) <= 50 ? C.warn : C.success
+            const isIdle      = r.score_label === 'Not Used' || r.score_label === 'Rarely Used'
+            return (
+              <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
+                <View style={{ flex: 2.2 }}>
+                  <Text style={s.tableCell}>{r.resource_name}</Text>
+                  <Text style={s.tableCellMuted}>{r.resource_group}</Text>
+                  {r.billing_type === 'ptu' && (
+                    <Text style={{ fontSize: 6.5, color: '#818cf8', fontFamily: 'Helvetica-Bold', marginTop: 1 }}>PTU</Text>
+                  )}
+                </View>
+                <Text style={{ ...s.tableCellMuted, flex: 1.4 }}>{aiLabel(r.resource_type)}</Text>
+                <Text style={{ ...s.tableCell, flex: 0.9 }}>{fmt(r.cost_current_month)}</Text>
+                <Text style={{ ...s.tableCellMuted, flex: 0.9 }}>{fmt(r.cost_previous_month)}</Text>
+                <Text style={{ ...s.tableCell, flex: 1 }}>{fmtTokens(r.total_tokens)}</Text>
+                <Text style={{ ...s.tableCellMuted, flex: 0.8 }}>{fmtCalls(r.total_calls)}</Text>
+                <View style={{ flex: 0.8 }}>
+                  {isIdle ? (
+                    <View style={s.pillRed}>
+                      <Text style={{ ...s.pillText, color: '#fca5a5' }}>IDLE</Text>
+                    </View>
+                  ) : throttlePct != null && throttlePct > 5 ? (
+                    <View style={s.pillYellow}>
+                      <Text style={{ ...s.pillText, color: '#fcd34d' }}>{throttlePct.toFixed(0)}% THR</Text>
+                    </View>
+                  ) : (
+                    <View style={s.pillGreen}>
+                      <Text style={{ ...s.pillText, color: '#86efac' }}>ACTIVE</Text>
+                    </View>
+                  )}
+                  <Text style={{ fontSize: 6.5, color: scoreColor, fontFamily: 'Helvetica-Bold', marginTop: 2 }}>
+                    Score {(r.final_score ?? 0).toFixed(0)}
+                  </Text>
+                </View>
+              </View>
+            )
+          })}
+        </View>
+
+        {/* Totals row */}
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 24, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ fontSize: 8, color: C.textDim }}>Total AI spend</Text>
+            <Text style={{ fontSize: 9, color: '#a78bfa', fontFamily: 'Helvetica-Bold' }}>{fmt(totalCost)} / month · {fmt(totalCost * 12)} / year</Text>
+          </View>
+          {totalTokens > 0 && (
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 8, color: C.textDim }}>Total tokens (30d)</Text>
+              <Text style={{ fontSize: 9, color: C.text, fontFamily: 'Helvetica-Bold' }}>{fmtTokens(totalTokens)}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* PTU advisory */}
+        {ptuCount > 0 && (
+          <View style={{ ...s.narrativeBox, borderLeftColor: '#818cf8', marginTop: 14 }}>
+            <Text style={{ fontSize: 8.5, color: C.textMuted, lineHeight: 1.6 }}>
+              <Text style={{ fontFamily: 'Helvetica-Bold', color: '#a78bfa' }}>PTU (Provisioned Throughput)  </Text>
+              PTU deployments are flat-fee commitments billed whether or not they are used.
+              Low utilization on a PTU is a reservation waste issue — do not delete the deployment;
+              instead review whether the committed capacity is still needed, or whether a consumption
+              (pay-per-token) tier would better match the workload.
+            </Text>
+          </View>
+        )}
+      </View>
+      <PageFooter subscriptionId={subscriptionId} />
+    </Page>
+  )
+}
+
 // ── PDF Document ───────────────────────────────────────────────────────────────
 
 function ReportDocument({ data }) {
@@ -1244,6 +1407,7 @@ function ReportDocument({ data }) {
       <SummaryPage      kpi={data.kpi} tagCompliancePct={data.tag_compliance_pct} totalCarbon={data.total_carbon_kg} subscriptionId={subLabel} />
       {data.ai_narrative && <NarrativePage narrative={data.ai_narrative} subscriptionId={subLabel} />}
       <ChartsPage       scoreDistribution={data.score_distribution} resourceTypes={data.resource_type_summary} kpi={data.kpi} subscriptionId={subLabel} />
+      <AICostPage       resources={data.resources} kpi={data.kpi} subscriptionId={subLabel} />
       <ActionPlanPage   savings={data.savings_recommendations} resources={data.resources} subscriptionId={subLabel} />
       <SavingsPage      savings={data.savings_recommendations} resources={data.resources} subscriptionId={subLabel} />
       <RGSummaryPage    resources={data.resources} kpi={data.kpi} subscriptionId={subLabel} />

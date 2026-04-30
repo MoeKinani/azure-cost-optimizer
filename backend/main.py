@@ -1126,8 +1126,13 @@ async def _build_dashboard(
     ]
 
     # ── KPI ─────────────────────────────────────────────────────────────────
-    total_curr  = sum(r.cost_current_month  for r in resource_metrics_list)
-    total_prev  = sum(r.cost_previous_month for r in resource_metrics_list)
+    # Use raw billing totals so the headline figure matches Azure Cost Analysis.
+    # curr_costs / prev_costs include every row returned by Cost Management
+    # (real resources + deleted resources with billing lag + unassigned charges
+    # like Defender/Marketplace).  sum(resource_metrics_list) misses those,
+    # producing a figure ~15–25% below what Azure portal shows.
+    total_curr  = sum(curr_costs.values())
+    total_prev  = sum(prev_costs.values())
     orphan_list = [r for r in resource_metrics_list if r.is_orphan]
     orphan_cost = sum(r.cost_current_month for r in orphan_list)
     scores      = [r.final_score for r in resource_metrics_list]

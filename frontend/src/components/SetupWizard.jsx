@@ -21,7 +21,7 @@ function humanizeError(msg = '') {
   if (msg.includes('AADSTS50126'))
     return 'Wrong credentials. Double-check your Client Secret.'
   if (msg.includes('AuthorizationFailed') || msg.includes('does not have authorization'))
-    return 'Missing permissions. Assign Reader + Cost Management Reader roles to this app on your subscription.'
+    return 'Missing permissions. Assign Reader, Cost Management Reader, and Monitoring Reader roles to this service principal — at management group scope (recommended) or at each subscription scope.'
   if (msg.includes('No subscriptions found'))
     return 'No subscriptions found. Make sure your account has access to at least one Azure subscription.'
   return msg
@@ -212,21 +212,24 @@ function PermissionsGuide() {
   return (
     <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 space-y-2">
       <div className="flex items-center gap-1.5 text-xs font-medium text-gray-400">
-        <Info size={12} /> Required Azure roles (at subscription scope)
+        <Info size={12} /> Required Azure roles
       </div>
       <div className="space-y-1.5">
         {[
-          { role: 'Reader', desc: 'Enumerate resources & metrics' },
-          { role: 'Cost Management Reader', desc: 'Pull billing & cost data' },
-        ].map(({ role, desc }) => (
-          <div key={role} className="flex items-center gap-2">
-            <span className="text-xs bg-blue-900/50 border border-blue-800/60 text-blue-300 px-1.5 py-0.5 rounded font-mono">{role}</span>
+          { role: 'Reader',                  scope: 'Management Group', desc: 'Enumerate resources & properties' },
+          { role: 'Cost Management Reader',  scope: 'Management Group', desc: 'Pull billing & cost data' },
+          { role: 'Monitoring Reader',       scope: 'Management Group', desc: 'Fetch CPU, memory & usage metrics' },
+          { role: 'Management Group Reader', scope: 'Management Group', desc: 'Required for the scope picker' },
+        ].map(({ role, scope, desc }) => (
+          <div key={role} className="flex items-start gap-2">
+            <span className="text-xs bg-blue-900/50 border border-blue-800/60 text-blue-300 px-1.5 py-0.5 rounded font-mono shrink-0">{role}</span>
             <span className="text-xs text-gray-500">{desc}</span>
           </div>
         ))}
       </div>
       <p className="text-xs text-gray-600 leading-relaxed">
-        Assign via Portal → Subscriptions → Access control (IAM) → Add role assignment
+        Assign at Management Group scope so roles cascade to all subscriptions beneath it.
+        Portal → Management Groups → your root MG → Access control (IAM) → Add role assignment
       </p>
     </div>
   )
