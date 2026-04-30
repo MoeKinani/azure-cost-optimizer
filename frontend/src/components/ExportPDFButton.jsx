@@ -160,6 +160,24 @@ function computePriority(rec) {
   return 'Medium'
 }
 
+// ── Severity colour helpers ────────────────────────────────────────────────────
+
+function gradeColor(grade) {
+  if (!grade || grade === '—') return C.textDim
+  const g = grade.charAt(0).toUpperCase()
+  if (g === 'A') return C.success
+  if (g === 'B') return C.green
+  if (g === 'C') return C.warn
+  return C.danger
+}
+
+function healthColor(pct)     { return pct >= 75 ? C.success : pct >= 50 ? C.warn : C.danger }
+function complianceColor(pct) { return pct >= 80 ? C.success : pct >= 50 ? C.warn : C.danger }
+function orphanColor(count)   { return count === 0 ? C.success : count <= 10 ? C.warn : C.danger }
+
+const WORKLOAD_LABEL = { declining: 'DECLINING', bursty: 'BURSTY', steady_low: 'STEADY LOW', inactive: 'INACTIVE' }
+const WORKLOAD_COLOR = { declining: C.danger, bursty: C.warn, steady_low: C.textDim, inactive: C.danger }
+
 // ── Billing date range (P10) ───────────────────────────────────────────────────
 
 function billingDateRange(kpi) {
@@ -263,8 +281,16 @@ function CoverPage({ kpi, subscriptionId, subscriptionName, generatedAt }) {
               <Text style={s.coverMetaLabel}>Resources scanned</Text>
               <Text style={s.coverMetaValue}>{kpi.total_resources?.toLocaleString()}</Text>
             </View>
+            {kpi.not_used_count > 0 && (
+              <View style={s.coverMetaRow}>
+                <Text style={s.coverMetaLabel}>Confirmed idle</Text>
+                <Text style={{ ...s.coverMetaValue, color: C.danger, fontFamily: 'Helvetica-Bold' }}>
+                  {kpi.not_used_count} resources · {fmt(kpi.not_used_cost)} / month
+                </Text>
+              </View>
+            )}
             <View style={s.coverMetaRow}>
-              <Text style={s.coverMetaLabel}>Monthly spend</Text>
+              <Text style={s.coverMetaLabel}>{kpi.billing_basis === 'current_month' ? 'Monthly spend (MTD)' : 'Monthly spend'}</Text>
               <Text style={s.coverMetaValue}>{fmt(kpi.total_cost_current_month)}  ({momSign}{fmt(kpi.mom_cost_delta)} vs last month)</Text>
             </View>
             <View style={s.coverMetaRow}>
@@ -279,6 +305,14 @@ function CoverPage({ kpi, subscriptionId, subscriptionName, generatedAt }) {
               <Text style={s.coverMetaLabel}>Cost data period</Text>
               <Text style={s.coverMetaValue}>{billingDateRange(kpi)}</Text>
             </View>
+            {kpi.cost_grade && kpi.cost_grade !== '—' && (
+              <View style={s.coverMetaRow}>
+                <Text style={s.coverMetaLabel}>Efficiency Grade</Text>
+                <Text style={{ ...s.coverMetaValue, color: gradeColor(kpi.cost_grade), fontFamily: 'Helvetica-Bold' }}>
+                  {kpi.cost_grade}  ({kpi.cost_score?.toFixed(0) ?? 0} / 100)
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -293,13 +327,16 @@ function CoverPage({ kpi, subscriptionId, subscriptionName, generatedAt }) {
 function SummaryPage({ kpi, tagCompliancePct, totalCarbon, subscriptionId }) {
   const momSign = kpi.mom_cost_delta_pct >= 0 ? '+' : ''
   const kpis = [
-    { label: 'Current Month Spend',   value: fmt(kpi.total_cost_current_month),   sub: `${momSign}${pct(kpi.mom_cost_delta_pct)} vs last month` },
-    { label: 'Potential Monthly Savings', value: fmt(kpi.total_potential_savings), sub: `${kpi.total_resources} resources scanned` },
-    { label: 'Health Score',          value: pct(kpi.health_score_pct),            sub: 'Actively / Fully Used resources' },
-    { label: 'Orphaned Resources',    value: kpi.orphan_count,                     sub: `Wasting ${fmt(kpi.orphan_cost)} / month` },
-    { label: 'Tag Compliance',        value: pct(tagCompliancePct),                sub: 'Resources with required tags' },
-    { label: 'Carbon Footprint',      value: `${Number(totalCarbon).toFixed(1)} kg`, sub: 'CO₂ equivalent per month' },
+    { label: 'Current Month Spend',      value: fmt(kpi.total_cost_current_month),     sub: `${momSign}${pct(kpi.mom_cost_delta_pct)} vs last month`, color: C.accent },
+    { label: 'Potential Monthly Savings', value: fmt(kpi.total_potential_savings),      sub: `${kpi.total_resources} resources scanned`,               color: C.success },
+    { label: 'Health Score',             value: pct(kpi.health_score_pct),              sub: 'Actively / Fully Used resources',                        color: healthColor(kpi.health_score_pct) },
+    { label: 'Orphaned Resources',       value: kpi.orphan_count,                       sub: `Wasting ${fmt(kpi.orphan_cost)} / month`,                color: orphanColor(kpi.orphan_count) },
+    { label: 'Tag Compliance',           value: pct(tagCompliancePct),                  sub: 'Resources with required tags',                           color: complianceColor(tagCompliancePct) },
+    { label: 'Carbon Footprint',         value: `${Number(totalCarbon).toFixed(1)} kg`, sub: 'CO₂ equivalent per month',                               color: C.textDim },
   ]
+
+  const hasGrade = kpi.cost_grade && kpi.cost_grade !== '—'
+  const scoreBarW = Math.min(260, ((kpi.cost_score || 0) / 100) * 260)
 
   return (
     <Page size="A4" style={s.page}>
@@ -308,11 +345,32 @@ function SummaryPage({ kpi, tagCompliancePct, totalCarbon, subscriptionId }) {
           <Text style={s.sectionTitle}>Executive Summary</Text>
         </View>
 
+        {/* Efficiency Grade banner */}
+        {hasGrade && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: C.bgCard, borderRadius: 8, padding: 14, marginBottom: 16, gap: 16 }}>
+            <View style={{ alignItems: 'center', width: 60 }}>
+              <Text style={{ fontSize: 38, fontFamily: 'Helvetica-Bold', color: gradeColor(kpi.cost_grade), lineHeight: 1 }}>{kpi.cost_grade}</Text>
+              <Text style={{ fontSize: 7, color: C.textDim, marginTop: 3 }}>Efficiency Grade</Text>
+            </View>
+            <View style={{ width: 1, backgroundColor: C.border, alignSelf: 'stretch' }} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 8.5, color: C.textMuted, lineHeight: 1.5, marginBottom: 8 }}>
+                {kpi.cost_score_label || 'Composite score across spend efficiency, resource health, governance, and Azure Advisor recommendations.'}
+              </Text>
+              <Svg width={260} height={8}>
+                <Rect x={0} y={1} width={260} height={6} fill={C.bgLight} rx={3} />
+                <Rect x={0} y={1} width={Math.max(4, scoreBarW)} height={6} fill={gradeColor(kpi.cost_grade)} rx={3} />
+              </Svg>
+              <Text style={{ fontSize: 7, color: C.textDim, marginTop: 3 }}>{(kpi.cost_score || 0).toFixed(1)} / 100</Text>
+            </View>
+          </View>
+        )}
+
         <View style={s.kpiGrid}>
           {kpis.map((k, i) => (
-            <View key={i} style={s.kpiCard}>
+            <View key={i} style={{ ...s.kpiCard, borderTopColor: k.color }}>
               <Text style={s.kpiLabel}>{k.label}</Text>
-              <Text style={s.kpiValue}>{k.value}</Text>
+              <Text style={{ ...s.kpiValue, color: k.color === C.danger ? C.danger : k.color === C.warn ? C.warn : C.white }}>{k.value}</Text>
               <Text style={s.kpiSub}>{k.sub}</Text>
             </View>
           ))}
@@ -356,7 +414,10 @@ function NarrativePage({ narrative, subscriptionId }) {
 
 // ── Savings Recommendations ────────────────────────────────────────────────────
 
-function SavingsPage({ savings, subscriptionId }) {
+function SavingsPage({ savings, resources, subscriptionId }) {
+  const resourceMap = {}
+  ;(resources || []).forEach(r => { if (r.resource_id) resourceMap[r.resource_id.toLowerCase()] = r })
+
   const top = (savings || []).slice(0, 15)
   const priorityStyle = (p) => p === 'High' ? s.pillRed : p === 'Medium' ? s.pillYellow : s.pillBlue
   const priorityColor = (p) => p === 'High' ? '#fca5a5' : p === 'Medium' ? '#fcd34d' : '#93c5fd'
@@ -377,25 +438,40 @@ function SavingsPage({ savings, subscriptionId }) {
             <Text style={{ ...s.tableHeadCell, flex: 1 }}>Savings</Text>
             <Text style={{ ...s.tableHeadCell, flex: 0.8 }}>Priority</Text>
           </View>
-          {top.map((r, i) => (
-            <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
-              <View style={{ flex: 2.5 }}>
-                <Text style={s.tableCell}>{r.resource_name}</Text>
-                <Text style={s.tableCellMuted}>{r.resource_group}</Text>
-              </View>
-              <Text style={{ ...s.tableCellMuted, flex: 1.5 }}>{humanType(r.resource_type)}</Text>
-              <Text style={{ ...s.tableCell, flex: 1 }}>{fmt(r.current_monthly_cost)}</Text>
-              <Text style={{ ...s.tableCell, flex: 1, color: C.success, fontFamily: 'Helvetica-Bold' }}>{fmt(r.estimated_monthly_savings)}</Text>
-              <View style={{ flex: 0.8 }}>
-                <View style={priorityStyle(computePriority(r))}>
-                  <Text style={{ ...s.pillText, color: priorityColor(computePriority(r)) }}>{computePriority(r)}</Text>
+          {top.map((r, i) => {
+            const res = resourceMap[r.resource_id?.toLowerCase()]
+            const wp  = res?.workload_pattern
+            const wpLabel = wp && wp !== 'normal' ? WORKLOAD_LABEL[wp] || wp.toUpperCase() : null
+            const wpColor = WORKLOAD_COLOR[wp] || C.textDim
+            const score   = r.score ?? res?.final_score
+            const scoreColor = score != null
+              ? (score <= 25 ? C.danger : score <= 50 ? C.warn : score <= 75 ? C.accent : C.success)
+              : C.textDim
+            const aiNote = r.ai_explanation || r.ai_action
+            return (
+              <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
+                <View style={{ flex: 2.5 }}>
+                  <Text style={s.tableCell}>{r.resource_name}</Text>
+                  <Text style={s.tableCellMuted}>{r.resource_group}</Text>
+                  {wpLabel && <Text style={{ fontSize: 6.5, color: wpColor, fontFamily: 'Helvetica-Bold', marginTop: 1 }}>{wpLabel}</Text>}
+                  {aiNote && <Text style={{ fontSize: 6.5, color: C.textDim, lineHeight: 1.4, marginTop: 1 }}>{aiNote.slice(0, 100)}{aiNote.length > 100 ? '…' : ''}</Text>}
+                </View>
+                <Text style={{ ...s.tableCellMuted, flex: 1.5 }}>{humanType(r.resource_type)}</Text>
+                <Text style={{ ...s.tableCell, flex: 1 }}>{fmt(r.current_monthly_cost)}</Text>
+                <Text style={{ ...s.tableCell, flex: 1, color: C.success, fontFamily: 'Helvetica-Bold' }}>{fmt(r.estimated_monthly_savings)}</Text>
+                <View style={{ flex: 0.8, gap: 4 }}>
+                  <View style={priorityStyle(computePriority(r))}>
+                    <Text style={{ ...s.pillText, color: priorityColor(computePriority(r)) }}>{computePriority(r)}</Text>
+                  </View>
+                  {score != null && (
+                    <Text style={{ fontSize: 6.5, color: scoreColor, fontFamily: 'Helvetica-Bold' }}>Score {score.toFixed(0)}</Text>
+                  )}
                 </View>
               </View>
-            </View>
-          ))}
+            )
+          })}
         </View>
 
-        {/* Total row */}
         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: 8, gap: 16 }}>
           <Text style={{ fontSize: 9, color: C.textMuted }}>
             Top {top.length} shown — full portfolio: <Text style={{ color: C.success, fontFamily: 'Helvetica-Bold' }}>{fmt(top.reduce((sum, r) => sum + (r.estimated_monthly_savings || 0), 0))} / month</Text>
@@ -413,6 +489,9 @@ function RightSizePage({ rightsize, subscriptionId }) {
   const top = (rightsize || []).slice(0, 12)
   if (!top.length) return null
 
+  const totalSavings = top.reduce((sum, r) => sum + (r.estimated_savings || 0), 0)
+  const totalCurrent = top.reduce((sum, r) => sum + (r.current_monthly_cost || 0), 0)
+
   return (
     <Page size="A4" style={s.page}>
       <View style={s.inner}>
@@ -426,7 +505,7 @@ function RightSizePage({ rightsize, subscriptionId }) {
             <Text style={{ ...s.tableHeadCell, flex: 2 }}>Resource</Text>
             <Text style={{ ...s.tableHeadCell, flex: 1.2 }}>Current SKU</Text>
             <Text style={{ ...s.tableHeadCell, flex: 1.2 }}>Suggested SKU</Text>
-            <Text style={{ ...s.tableHeadCell, flex: 0.8 }}>CPU</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 0.8 }}>Avg CPU</Text>
             <Text style={{ ...s.tableHeadCell, flex: 0.9 }}>Savings</Text>
           </View>
           {top.map((r, i) => (
@@ -442,6 +521,17 @@ function RightSizePage({ rightsize, subscriptionId }) {
             </View>
           ))}
         </View>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 20, paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ fontSize: 8, color: C.textDim }}>Current spend (these {top.length})</Text>
+            <Text style={{ fontSize: 9, color: C.text, fontFamily: 'Helvetica-Bold' }}>{fmt(totalCurrent)} / month</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ fontSize: 8, color: C.textDim }}>Total right-size savings</Text>
+            <Text style={{ fontSize: 9, color: C.success, fontFamily: 'Helvetica-Bold' }}>{fmt(totalSavings)} / month · {fmt(totalSavings * 12)} / year</Text>
+          </View>
+        </View>
       </View>
       <PageFooter subscriptionId={subscriptionId} />
     </Page>
@@ -450,8 +540,17 @@ function RightSizePage({ rightsize, subscriptionId }) {
 
 // ── Orphaned Resources ─────────────────────────────────────────────────────────
 
-function OrphansPage({ orphans, subscriptionId }) {
+function OrphansPage({ orphans, resources, subscriptionId }) {
   if (!orphans?.length) return null
+
+  const resourceMap = {}
+  ;(resources || []).forEach(r => { if (r.resource_id) resourceMap[r.resource_id.toLowerCase()] = r })
+
+  const totalMonthly    = orphans.reduce((sum, r) => sum + (r.monthly_cost || 0), 0)
+  const totalCumulative = orphans.reduce((sum, o) => {
+    const res = resourceMap[o.resource_id?.toLowerCase()]
+    return sum + (res?.cumulative_waste_usd || 0)
+  }, 0)
 
   return (
     <Page size="A4" style={s.page}>
@@ -468,26 +567,40 @@ function OrphansPage({ orphans, subscriptionId }) {
             <Text style={{ ...s.tableHeadCell, flex: 2 }}>Resource</Text>
             <Text style={{ ...s.tableHeadCell, flex: 1.5 }}>Type</Text>
             <Text style={{ ...s.tableHeadCell, flex: 2 }}>Reason</Text>
-            <Text style={{ ...s.tableHeadCell, flex: 0.9 }}>Monthly Cost</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 0.9 }}>Monthly</Text>
           </View>
-          {orphans.map((r, i) => (
-            <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
-              <View style={{ flex: 2 }}>
-                <Text style={s.tableCell}>{r.resource_name}</Text>
-                <Text style={s.tableCellMuted}>{r.resource_group}</Text>
+          {orphans.map((r, i) => {
+            const res = resourceMap[r.resource_id?.toLowerCase()]
+            return (
+              <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
+                <View style={{ flex: 2 }}>
+                  <Text style={s.tableCell}>{r.resource_name}</Text>
+                  <Text style={s.tableCellMuted}>{r.resource_group}</Text>
+                  {res?.days_idle != null && (
+                    <Text style={{ fontSize: 6.5, color: C.danger, marginTop: 1 }}>
+                      {`Idle ${res.days_idle}d`}{res.cumulative_waste_usd > 0 ? ` · ${fmt(res.cumulative_waste_usd)} total waste` : ''}
+                    </Text>
+                  )}
+                </View>
+                <Text style={{ ...s.tableCellMuted, flex: 1.5 }}>{humanType(r.resource_type)}</Text>
+                <Text style={{ ...s.tableCellMuted, flex: 2 }}>{r.orphan_reason}</Text>
+                <Text style={{ ...s.tableCell, flex: 0.9, color: C.danger }}>{fmt(r.monthly_cost)}</Text>
               </View>
-              <Text style={{ ...s.tableCellMuted, flex: 1.5 }}>{humanType(r.resource_type)}</Text>
-              <Text style={{ ...s.tableCellMuted, flex: 2 }}>{r.orphan_reason}</Text>
-              <Text style={{ ...s.tableCell, flex: 0.9, color: C.danger }}>{fmt(r.monthly_cost)}</Text>
-            </View>
-          ))}
+            )
+          })}
         </View>
 
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingTop: 8 }}>
-          <Text style={{ fontSize: 9, color: C.textMuted, marginRight: 8 }}>Total orphan waste:</Text>
-          <Text style={{ fontSize: 9, color: C.danger, fontFamily: 'Helvetica-Bold' }}>
-            {fmt(orphans.reduce((sum, r) => sum + (r.monthly_cost || 0), 0))} / month
-          </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 20, paddingTop: 8 }}>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ fontSize: 8, color: C.textDim }}>Monthly waste</Text>
+            <Text style={{ fontSize: 9, color: C.danger, fontFamily: 'Helvetica-Bold' }}>{fmt(totalMonthly)} / month</Text>
+          </View>
+          {totalCumulative > 0 && (
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 8, color: C.textDim }}>Total cumulative waste</Text>
+              <Text style={{ fontSize: 9, color: C.danger, fontFamily: 'Helvetica-Bold' }}>{fmt(totalCumulative)} to date</Text>
+            </View>
+          )}
         </View>
       </View>
       <PageFooter subscriptionId={subscriptionId} />
@@ -497,9 +610,10 @@ function OrphansPage({ orphans, subscriptionId }) {
 
 // ── Cost by Resource Type ──────────────────────────────────────────────────────
 
-function CostByTypePage({ resourceTypes, subscriptionId }) {
+function CostByTypePage({ resourceTypes, kpi, subscriptionId }) {
   const top = (resourceTypes || []).filter(r => r.cost_current_month > 0).slice(0, 15)
   if (!top.length) return null
+  const thisMoLabel = kpi?.billing_basis === 'current_month' ? 'This Month (MTD)' : 'This Month'
 
   return (
     <Page size="A4" style={s.page}>
@@ -512,7 +626,7 @@ function CostByTypePage({ resourceTypes, subscriptionId }) {
           <View style={s.tableHead}>
             <Text style={{ ...s.tableHeadCell, flex: 2.5 }}>Resource Type</Text>
             <Text style={{ ...s.tableHeadCell, flex: 0.7 }}>Count</Text>
-            <Text style={{ ...s.tableHeadCell, flex: 1 }}>This Month</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 1 }}>{thisMoLabel}</Text>
             <Text style={{ ...s.tableHeadCell, flex: 1 }}>Last Month</Text>
             <Text style={{ ...s.tableHeadCell, flex: 0.8 }}>Avg Score</Text>
           </View>
@@ -538,13 +652,15 @@ function CostByTypePage({ resourceTypes, subscriptionId }) {
 
 // ── Reserved Instance Recommendations ─────────────────────────────────────────
 
-function ReservationsPage({ resources, subscriptionId }) {
+function ReservationsPage({ resources, activeReservations, subscriptionId }) {
   const eligible = (resources || [])
     .filter(r => r.ri_eligible && (r.ri_1yr_monthly_savings > 0 || r.ri_3yr_monthly_savings > 0))
     .sort((a, b) => (b.ri_1yr_monthly_savings || 0) - (a.ri_1yr_monthly_savings || 0))
     .slice(0, 20)
 
-  if (!eligible.length) return null
+  const reserved = (activeReservations || [])
+
+  if (!eligible.length && !reserved.length) return null
 
   const total1yr = eligible.reduce((s, r) => s + (r.ri_1yr_monthly_savings || 0), 0)
   const total3yr = eligible.reduce((s, r) => s + (r.ri_3yr_monthly_savings || 0), 0)
@@ -608,16 +724,60 @@ function ReservationsPage({ resources, subscriptionId }) {
           ))}
         </View>
 
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 20, paddingTop: 8 }}>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 8, color: C.textDim }}>1-yr total savings</Text>
-            <Text style={{ fontSize: 9, color: C.success, fontFamily: 'Helvetica-Bold' }}>{fmt(total1yr)}/mo · {fmt(total1yr * 12)}/yr</Text>
+        {eligible.length > 0 && (
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 20, paddingTop: 8 }}>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 8, color: C.textDim }}>1-yr total savings</Text>
+              <Text style={{ fontSize: 9, color: C.success, fontFamily: 'Helvetica-Bold' }}>{fmt(total1yr)}/mo · {fmt(total1yr * 12)}/yr</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 8, color: C.textDim }}>3-yr total savings</Text>
+              <Text style={{ fontSize: 9, color: C.green, fontFamily: 'Helvetica-Bold' }}>{fmt(total3yr)}/mo · {fmt(total3yr * 36)} over 3yrs</Text>
+            </View>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 8, color: C.textDim }}>3-yr total savings</Text>
-            <Text style={{ fontSize: 9, color: C.green, fontFamily: 'Helvetica-Bold' }}>{fmt(total3yr)}/mo · {fmt(total3yr * 36)} over 3yrs</Text>
+        )}
+
+        {/* Already Reserved section */}
+        {reserved.length > 0 && (
+          <View style={{ marginTop: 24 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${C.border}` }}>
+              <Text style={{ fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.white }}>Already Reserved</Text>
+              <View style={{ ...s.sectionBadge, backgroundColor: '#14532d', marginLeft: 10 }}>
+                <Text style={s.sectionBadgeText}>{reserved.length} ACTIVE</Text>
+              </View>
+            </View>
+            {reserved[0]?.from_billing && (
+              <View style={{ ...s.narrativeBox, borderLeftColor: C.accent, marginBottom: 10 }}>
+                <Text style={{ fontSize: 8, color: C.textMuted, lineHeight: 1.5 }}>
+                  Coverage detected from billing data (AmortizedCost). Term and expiry details unavailable — Reservations API requires tenant-level Reader role.
+                </Text>
+              </View>
+            )}
+            <View style={s.table}>
+              <View style={s.tableHead}>
+                <Text style={{ ...s.tableHeadCell, flex: 2.5 }}>Resource</Text>
+                <Text style={{ ...s.tableHeadCell, flex: 1.5 }}>Type</Text>
+                <Text style={{ ...s.tableHeadCell, flex: 0.8 }}>Term</Text>
+                <Text style={{ ...s.tableHeadCell, flex: 1 }}>Covered/mo</Text>
+                <Text style={{ ...s.tableHeadCell, flex: 0.9 }}>Expires</Text>
+              </View>
+              {reserved.map((res, i) => (
+                <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
+                  <View style={{ flex: 2.5 }}>
+                    <Text style={s.tableCell}>{res.display_name || res.name || '—'}</Text>
+                    {res.from_billing && <Text style={{ fontSize: 6.5, color: C.textDim }}>billing-detected</Text>}
+                  </View>
+                  <Text style={{ ...s.tableCellMuted, flex: 1.5 }}>{res.type_label || humanType(res.resource_type)}</Text>
+                  <Text style={{ ...s.tableCellMuted, flex: 0.8 }}>{res.term || '—'}</Text>
+                  <Text style={{ ...s.tableCell, flex: 1, color: C.success }}>{res.covered_cost > 0 ? fmt(res.covered_cost) : '—'}</Text>
+                  <Text style={{ ...s.tableCellMuted, flex: 0.9 }}>
+                    {res.days_to_expiry != null ? `${res.days_to_expiry}d left` : res.expiry_date ? res.expiry_date.slice(0, 10) : '—'}
+                  </Text>
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
+        )}
       </View>
       <PageFooter subscriptionId={subscriptionId} />
     </Page>
@@ -687,6 +847,15 @@ function ActionPlanPage({ savings, resources, subscriptionId }) {
                   {priority.toUpperCase()} PRIORITY  ·  {humanType(r.resource_type)}  ·  {r.resource_group}
                 </Text>
                 <Text style={s.actionDesc}>{r.recommendation || r.ai_action || 'Review resource with owning team.'}</Text>
+                {/* Protected resource caution — shown BEFORE steps so engineers read it first */}
+                {res?.is_protected && (
+                  <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center', marginTop: 5, backgroundColor: '#451a03', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 3 }}>
+                    <Text style={{ fontSize: 7, color: C.warn, fontFamily: 'Helvetica-Bold' }}>⚠ PROTECTED —</Text>
+                    <Text style={{ fontSize: 7, color: C.warn, flex: 1 }}>
+                      {res.protection_reason || 'Resource has locks, backup, or RI coverage. Review before taking any action.'}
+                    </Text>
+                  </View>
+                )}
                 {/* Step-by-step actions (P6) */}
                 {steps.length > 0 && (
                   <View style={{ marginTop: 5, gap: 3 }}>
@@ -737,6 +906,8 @@ function DataQualityPage({ resources, subscriptionId }) {
 
   if (!noData.length) return null
 
+  const blindSpend = noData.reduce((sum, r) => sum + (r.cost_current_month || 0), 0)
+
   // Group by resource group
   const byRG = {}
   noData.forEach(r => {
@@ -759,9 +930,10 @@ function DataQualityPage({ resources, subscriptionId }) {
         <View style={{ ...s.narrativeBox, borderLeftColor: C.warn, marginBottom: 16 }}>
           <Text style={{ fontSize: 9, color: C.warn, fontFamily: 'Helvetica-Bold', marginBottom: 4 }}>Action required before optimization</Text>
           <Text style={{ fontSize: 8.5, color: C.textMuted, lineHeight: 1.6 }}>
-            The {noData.length} resource{noData.length !== 1 ? 's' : ''} below have no Azure Monitor diagnostic data.
-            Without metrics, utilisation scores cannot be calculated — these resources cannot be confidently recommended for deletion or right-sizing.{'\n'}
-            Fix: Azure Portal  Resource  Diagnostic settings  + Add diagnostic setting  Send to Log Analytics or Storage Account.{'\n'}
+            The {noData.length} resource{noData.length !== 1 ? 's' : ''} below have no Azure Monitor diagnostic data — representing{' '}
+            <Text style={{ color: C.warn, fontFamily: 'Helvetica-Bold' }}>{fmt(blindSpend)} / month</Text> of spend that cannot be scored or optimized.
+            Without metrics, utilisation cannot be calculated, so these resources cannot be confidently recommended for deletion or right-sizing.{'\n'}
+            Fix: Azure Portal › Resource › Diagnostic settings › + Add diagnostic setting › Send to Log Analytics or Storage Account.{'\n'}
             After 24–48 hours, refresh the scan to receive accurate scores and data-backed recommendations.
           </Text>
         </View>
@@ -799,10 +971,11 @@ function RGSummaryPage({ resources, kpi, subscriptionId }) {
   const rgMap = {}
   resources.forEach(r => {
     const rg = r.resource_group || 'Unknown'
-    if (!rgMap[rg]) rgMap[rg] = { name: rg, cost: 0, savings: 0, count: 0, worstScore: 100 }
+    if (!rgMap[rg]) rgMap[rg] = { name: rg, cost: 0, savings: 0, count: 0, worstScore: 100, orphans: 0 }
     rgMap[rg].cost    += r.cost_current_month || 0
     rgMap[rg].savings += r.estimated_monthly_savings || 0
     rgMap[rg].count   += 1
+    if (r.is_orphan) rgMap[rg].orphans += 1
     const sc = r.final_score ?? 100
     if (sc < rgMap[rg].worstScore) rgMap[rg].worstScore = sc
   })
@@ -836,6 +1009,7 @@ function RGSummaryPage({ resources, kpi, subscriptionId }) {
                 <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
                   <Text style={{ fontSize: 8, color: C.textMuted }}>{rg.count} resources</Text>
                   <Text style={{ fontSize: 8, color: C.textDim }}>{billPct}% of bill</Text>
+                  {rg.orphans > 0 && <Text style={{ fontSize: 8, color: C.danger, fontFamily: 'Helvetica-Bold' }}>{rg.orphans} orphan{rg.orphans !== 1 ? 's' : ''}</Text>}
                   {rg.savings > 0 && <Text style={{ fontSize: 8, color: C.success, fontFamily: 'Helvetica-Bold' }}>{fmt(rg.savings)} saveable</Text>}
                 </View>
               </View>
@@ -974,15 +1148,87 @@ function GlossaryPage({ subscriptionId }) {
   )
 }
 
+// ── Subscription Breakdown (multi-sub exports) ────────────────────────────────
+
+function SubscriptionBreakdownPage({ subscriptions, subscriptionId }) {
+  if (!subscriptions?.length || subscriptions.length < 2) return null
+
+  const sorted     = [...subscriptions].sort((a, b) => (b.cost_current || 0) - (a.cost_current || 0))
+  const totalCost  = sorted.reduce((s, r) => s + (r.cost_current  || 0), 0)
+  const totalOrph  = sorted.reduce((s, r) => s + (r.orphan_count  || 0), 0)
+  const totalAdv   = sorted.reduce((s, r) => s + (r.advisor_rec_count || 0), 0)
+
+  return (
+    <Page size="A4" style={s.page}>
+      <View style={s.inner}>
+        <View style={s.sectionHeader}>
+          <Text style={s.sectionTitle}>Subscription Breakdown</Text>
+          <View style={s.sectionBadge}><Text style={s.sectionBadgeText}>{sorted.length} SUBSCRIPTIONS</Text></View>
+        </View>
+
+        <View style={s.table}>
+          <View style={s.tableHead}>
+            <Text style={{ ...s.tableHeadCell, flex: 2.5 }}>Subscription</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 0.6 }}>Resources</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 1 }}>This Month</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 1 }}>Last Month</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 0.7 }}>Orphans</Text>
+            <Text style={{ ...s.tableHeadCell, flex: 0.7 }}>Advisor</Text>
+          </View>
+          {sorted.map((sub, i) => {
+            const delta     = (sub.cost_current || 0) - (sub.cost_previous || 0)
+            const deltaClr  = delta > 0 ? C.danger : delta < 0 ? C.success : C.textMuted
+            const billPct   = totalCost > 0 ? ((sub.cost_current / totalCost) * 100).toFixed(1) : '0.0'
+            return (
+              <View key={i} style={[s.tableRow, i % 2 === 1 ? s.tableRowAlt : {}]}>
+                <View style={{ flex: 2.5 }}>
+                  <Text style={s.tableCell}>{sub.subscription_name || '—'}</Text>
+                  <Text style={s.tableCellMuted}>{sub.subscription_id?.slice(0, 8)}…  ·  {billPct}% of total</Text>
+                </View>
+                <Text style={{ ...s.tableCellMuted, flex: 0.6 }}>{sub.resource_count ?? '—'}</Text>
+                <Text style={{ ...s.tableCell, flex: 1 }}>{fmt(sub.cost_current)}</Text>
+                <Text style={{ ...s.tableCell, flex: 1, color: deltaClr }}>{fmt(sub.cost_previous)}</Text>
+                <Text style={{ ...s.tableCellMuted, flex: 0.7, color: (sub.orphan_count || 0) > 5 ? C.warn : C.textMuted }}>{sub.orphan_count ?? '—'}</Text>
+                <Text style={{ ...s.tableCellMuted, flex: 0.7 }}>{sub.advisor_rec_count ?? '—'}</Text>
+              </View>
+            )
+          })}
+        </View>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 24, paddingTop: 8 }}>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ fontSize: 8, color: C.textDim }}>Combined spend</Text>
+            <Text style={{ fontSize: 9, color: C.text, fontFamily: 'Helvetica-Bold' }}>{fmt(totalCost)} / month</Text>
+          </View>
+          {totalOrph > 0 && (
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 8, color: C.textDim }}>Total orphans</Text>
+              <Text style={{ fontSize: 9, color: C.danger, fontFamily: 'Helvetica-Bold' }}>{totalOrph}</Text>
+            </View>
+          )}
+          {totalAdv > 0 && (
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 8, color: C.textDim }}>Advisor alerts</Text>
+              <Text style={{ fontSize: 9, color: C.warn, fontFamily: 'Helvetica-Bold' }}>{totalAdv}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+      <PageFooter subscriptionId={subscriptionId} />
+    </Page>
+  )
+}
+
 // ── PDF Document ───────────────────────────────────────────────────────────────
 
 function ReportDocument({ data }) {
-  const activeSub   = data.active_subscription_id
-    ? data.subscriptions?.find(s => s.subscription_id === data.active_subscription_id)
-    : data.subscriptions?.[0]
+  const isAllSubs   = !data.active_subscription_id
+  const activeSub   = isAllSubs
+    ? null
+    : data.subscriptions?.find(s => s.subscription_id === data.active_subscription_id)
   const subId       = activeSub?.subscription_id || ''
   const subName     = activeSub?.subscription_name || ''
-  const subLabel    = subName || (subId ? `${subId.slice(0, 8)}…` : 'All Subscriptions')
+  const subLabel    = isAllSubs ? 'All Subscriptions' : (subName || (subId ? `${subId.slice(0, 8)}…` : 'All Subscriptions'))
   const generatedAt = date()
 
   return (
@@ -992,16 +1238,19 @@ function ReportDocument({ data }) {
       subject={`Cost analysis for ${subName || subId || 'all subscriptions'}`}
     >
       <CoverPage        kpi={data.kpi} subscriptionId={subId} subscriptionName={subName} generatedAt={generatedAt} />
+      {isAllSubs && (data.subscriptions?.length ?? 0) > 1 && (
+        <SubscriptionBreakdownPage subscriptions={data.subscriptions} subscriptionId={subLabel} />
+      )}
       <SummaryPage      kpi={data.kpi} tagCompliancePct={data.tag_compliance_pct} totalCarbon={data.total_carbon_kg} subscriptionId={subLabel} />
       {data.ai_narrative && <NarrativePage narrative={data.ai_narrative} subscriptionId={subLabel} />}
       <ChartsPage       scoreDistribution={data.score_distribution} resourceTypes={data.resource_type_summary} kpi={data.kpi} subscriptionId={subLabel} />
       <ActionPlanPage   savings={data.savings_recommendations} resources={data.resources} subscriptionId={subLabel} />
-      <SavingsPage      savings={data.savings_recommendations} subscriptionId={subLabel} />
+      <SavingsPage      savings={data.savings_recommendations} resources={data.resources} subscriptionId={subLabel} />
       <RGSummaryPage    resources={data.resources} kpi={data.kpi} subscriptionId={subLabel} />
-      <ReservationsPage resources={data.resources} subscriptionId={subLabel} />
+      <ReservationsPage resources={data.resources} activeReservations={data.active_reservations} subscriptionId={subLabel} />
       <RightSizePage    rightsize={data.rightsize_opportunities} subscriptionId={subLabel} />
-      <OrphansPage      orphans={data.orphans} subscriptionId={subLabel} />
-      <CostByTypePage   resourceTypes={data.resource_type_summary} subscriptionId={subLabel} />
+      <OrphansPage      orphans={data.orphans} resources={data.resources} subscriptionId={subLabel} />
+      <CostByTypePage   resourceTypes={data.resource_type_summary} kpi={data.kpi} subscriptionId={subLabel} />
       <DataQualityPage  resources={data.resources} subscriptionId={subLabel} />
       <GlossaryPage     subscriptionId={subLabel} />
     </Document>
@@ -1012,35 +1261,50 @@ function ReportDocument({ data }) {
 
 export default function ExportPDFButton({ data }) {
   const [generating, setGenerating] = useState(false)
+  const [exportError, setExportError] = useState(null)
 
   async function handleExport() {
     if (!data || generating) return
     setGenerating(true)
+    setExportError(null)
     try {
       const blob     = await pdf(<ReportDocument data={data} />).toBlob()
       const url      = URL.createObjectURL(blob)
       const a        = document.createElement('a')
-      const subId    = data.active_subscription_id || data.subscriptions?.[0]?.subscription_id || 'report'
-      a.href         = url
-      a.download     = `azure-cost-report-${subId.slice(0, 8)}-${new Date().toISOString().slice(0, 10)}.pdf`
+      const isAllSubs = !data.active_subscription_id
+      const subId     = data.active_subscription_id || 'all'
+      a.href          = url
+      a.download      = isAllSubs
+        ? `azure-cost-report-all-subscriptions-${new Date().toISOString().slice(0, 10)}.pdf`
+        : `azure-cost-report-${subId.slice(0, 8)}-${new Date().toISOString().slice(0, 10)}.pdf`
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('PDF generation failed:', err)
+      setExportError(err?.message || 'PDF generation failed')
     } finally {
       setGenerating(false)
     }
   }
 
   return (
-    <button
-      onClick={handleExport}
-      disabled={!data || generating}
-      title="Export PDF report"
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800/60 hover:bg-gray-700/60 text-xs text-gray-300 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-    >
-      {generating
-        ? <><Loader size={13} className="animate-spin" /> Generating…</>
-        : <><FileDown size={13} /> Export PDF</>
-      }
-    </button>
+    <div className="flex flex-col items-end gap-1">
+      <button
+        onClick={handleExport}
+        disabled={!data || generating}
+        title="Export PDF report"
+        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-700 bg-gray-800/60 hover:bg-gray-700/60 text-xs text-gray-300 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        {generating
+          ? <><Loader size={13} className="animate-spin" /> Generating…</>
+          : <><FileDown size={13} /> Export PDF</>
+        }
+      </button>
+      {exportError && (
+        <span className="text-xs text-red-400 max-w-[200px] text-right leading-tight">{exportError}</span>
+      )}
+    </div>
   )
 }

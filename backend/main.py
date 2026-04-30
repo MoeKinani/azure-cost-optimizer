@@ -66,7 +66,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "   # Vite inlines scripts in dev
+            "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; "   # wasm-unsafe-eval required by @react-pdf/renderer
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; "
             "connect-src 'self'; "

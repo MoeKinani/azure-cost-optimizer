@@ -6,6 +6,7 @@ config/
 backend/.env
 backend/.env.local
 backend/.env.*.local
+backend/settings.json
 
 # Private keys & certificates — never commit
 *.pem
