@@ -130,9 +130,9 @@ Wait 2-5 minutes for roles to propagate before launching.
 | Reader | List all resources |
 | Cost Management Reader | Pull billing and cost data |
 | Monitoring Reader | Read CPU, memory, and usage metrics |
-| Management Group Reader | Browse Root Management Group hierarchy (optional) |
+| Management Group Reader | Required to pass the scope picker in the setup wizard |
 
-> **Management Group Reader is optional.** Without it the tool falls back to a flat subscription list — you can still scan normally, you just won't see the MG hierarchy in the scope picker. To enable it, assign the role at the Root Management Group scope in Azure Portal under Management Groups > Access control (IAM).
+> **Management Group Reader is required.** Assign it at the Root Management Group scope in Azure Portal under Management Groups > Access control (IAM). Without it the setup wizard cannot load your subscription list and you will not be able to complete configuration.
 
 ![IAM role assignments in Azure Portal](docs/screenshots/iam-roles.png)
 
@@ -158,7 +158,7 @@ Sign in interactively with your **Microsoft Account** (no app registration neede
 
 Browse your **Root Management Group** hierarchy and pick any group to scan all subscriptions beneath it in one pass — no need to add subscriptions one by one.
 
-If your account does not have the **Management Group Reader** role, the tool falls back to a flat subscription list automatically. Your scan is not blocked — you just select a subscription directly instead of picking from the MG tree.
+> **Management Group Reader is required** to reach this step. If the role is not assigned the scope picker will not load and setup cannot proceed. See Step 4 above for how to assign it.
 
 ![Setup wizard — management group scope picker](docs/screenshots/setup-scope.png)
 
@@ -202,6 +202,9 @@ Resources with locks, backups, private endpoints, or active reservations are fla
 ---
 
 ## Troubleshooting
+
+**Setup wizard is stuck or the scope picker does not load**
+The Management Group Reader role is not assigned. Go to Azure Portal > Management Groups > your Root MG > Access control (IAM) and assign Management Group Reader to your account or service principal. Role propagation takes 2-5 minutes.
 
 **No resources found**
 The service principal is missing the Reader role, or the Tenant ID and Subscription ID are incorrect.
