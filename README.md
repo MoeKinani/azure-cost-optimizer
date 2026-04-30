@@ -54,13 +54,13 @@ Enterprise Azure cost tools are expensive and require you to hand your billing d
 - 🔍 **0-100 resource scoring** based on real Azure Monitor metrics — CPU, memory, network, storage, AI tokens
 - 🔑 **Two auth options** — sign in with your Microsoft Account interactively, or use a Service Principal for unattended access
 - 🌳 **Root Management Group support** — browse your full MG hierarchy and scan all subscriptions beneath any group in one pass
-- 🤖 **AI-assisted scoring** — connect Azure OpenAI to get plain-English explanations and catch false positives
+- 🤖 **AI-assisted scoring** — connect Azure OpenAI or Anthropic Claude to get plain-English explanations and catch false positives
 - 🧹 **Orphan detection** — unattached disks, unused public IPs, deallocated VMs, empty App Service Plans
 - 📈 **3 months of billing history** — sustained cost trends flagged before they become a problem
 - 📊 **Industry benchmarking** — see how your waste rate, resource health, and tag compliance compare to similar environments
 - 🌍 **Carbon footprint tracking** — CO₂ estimates with tree and flight equivalents
 - 📄 **PDF export** — shareable reports for stakeholder and board reviews
-- 🔒 **Fully offline** — read-only roles, no write access, no telemetry, no third-party servers
+- 🔒 **No telemetry** — read-only roles, no write access, no data sent anywhere. AI features are optional; when enabled, resource metadata is sent to your chosen AI provider (Azure OpenAI or Anthropic)
 
 ---
 
@@ -116,23 +116,25 @@ Save the `appId`, `password`, and `tenant` values from the output.
 
 ### Step 4 — Assign required roles
 
-Replace `YOUR_APP_ID` and `YOUR_SUBSCRIPTION_ID` with your values:
+Replace `YOUR_APP_ID`, `YOUR_SUBSCRIPTION_ID`, and `YOUR_MG_ID` with your values. `YOUR_MG_ID` is the Root Management Group ID found in Azure Portal under Management Groups.
 
 ```bat
-az role assignment create --assignee YOUR_APP_ID --role "Cost Management Reader" --scope "/subscriptions/YOUR_SUBSCRIPTION_ID"
+az role assignment create --assignee YOUR_APP_ID --role "Reader" --scope "/providers/Microsoft.Management/managementGroups/YOUR_MG_ID"
+az role assignment create --assignee YOUR_APP_ID --role "Cost Management Reader" --scope "/providers/Microsoft.Management/managementGroups/YOUR_MG_ID"
 az role assignment create --assignee YOUR_APP_ID --role "Monitoring Reader" --scope "/subscriptions/YOUR_SUBSCRIPTION_ID"
+az role assignment create --assignee YOUR_APP_ID --role "Management Group Reader" --scope "/providers/Microsoft.Management/managementGroups/YOUR_MG_ID"
 ```
 
 Wait 2-5 minutes for roles to propagate before launching.
 
-| Role | Purpose |
-|------|---------|
-| Reader | List all resources |
-| Cost Management Reader | Pull billing and cost data |
-| Monitoring Reader | Read CPU, memory, and usage metrics |
-| Management Group Reader | Required to pass the scope picker in the setup wizard |
+| Role | Scope | Purpose |
+|------|-------|---------|
+| Reader | Management Group | List all resources across subscriptions |
+| Cost Management Reader | Management Group | Pull billing and cost data |
+| Monitoring Reader | Subscription | Read CPU, memory, and usage metrics |
+| Management Group Reader | Management Group | Required to pass the scope picker in the setup wizard |
 
-> **Management Group Reader is required.** Assign it at the Root Management Group scope in Azure Portal under Management Groups > Access control (IAM). Without it the setup wizard cannot load your subscription list and you will not be able to complete configuration.
+> **Management Group Reader is required.** Without it the setup wizard cannot load your subscription list and you will not be able to complete configuration.
 
 ![IAM role assignments in Azure Portal](docs/screenshots/iam-roles.png)
 
@@ -197,7 +199,8 @@ Resources with locks, backups, private endpoints, or active reservations are fla
 
 - Read-only roles only — the service principal cannot modify or delete any Azure resource
 - Credentials stored locally in a `.env` file excluded from version control
-- All API calls go directly from your machine to Azure — no intermediary servers, no telemetry
+- All Azure API calls go directly from your machine to Azure — no intermediary servers, no telemetry
+- AI features are optional; when enabled, resource metadata is sent only to your configured provider (Azure OpenAI or Anthropic)
 
 ---
 
@@ -222,7 +225,7 @@ Assign the Monitoring Reader role. Azure AI Foundry metrics become available aut
 Role propagation takes 2-5 minutes after creation. Wait and click Refresh.
 
 **install.bat fails with "Building wheel for pydantic-core"**
-Python 3.13 or 3.14 is installed. Install Python 3.12.x and re-run `install.bat` — it detects and uses 3.12 automatically even if a newer version is also installed.
+Python 3.13 or later is installed. Install Python 3.11 or 3.12 from python.org and re-run `install.bat` — it detects and uses the compatible version automatically even if a newer version is also installed.
 
 ---
 
